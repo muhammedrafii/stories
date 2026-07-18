@@ -74,11 +74,22 @@ async function handleSignUp() {
     const username = document.getElementById('regUsername').value.trim().replace('@', '').toLowerCase();
 
     if(!email || !password || !username) return alert("Fill in all boxes.");
+    
+    // 1. Sign up the user inside Supabase Auth
     const { data, error } = await dbClient.auth.signUp({ email, password });
     if (error) return alert(error.message);
 
+    // 2. Insert the profile row explicitly right after creation
     if (data.user) {
-        await dbClient.from('profiles').insert([{ id: data.user.id, username: username }]);
+        const { error: profileError } = await dbClient.from('profiles').insert([
+            { id: data.user.id, username: username }
+        ]);
+        
+        if (profileError) {
+            console.error("Profile insertion error:", profileError);
+            return alert("Account created, but custom username profile failed to save.");
+        }
+        
         alert("Registration successful! Log In now.");
         showAuthScreen('login');
     }
@@ -100,14 +111,14 @@ async function loadProfileAndApp(user) {
     document.getElementById('authSection').classList.add('hidden');
     document.getElementById('appSection').classList.remove('hidden');
     
-    // Explicitly pull the profile row linked to the user's ID
+    // Pull profile row linked to the user's ID
     const { data, error } = await dbClient.from('profiles').select('username').eq('id', user.id).maybeSingle();
     
-    // Fallback gracefully to email prefix if the custom username row isn't found
     let userHandle = "user";
     if (data && data.username) {
         userHandle = data.username;
     } else if (user.email) {
+        // Fallback layout only applies if the database profile row does not exist
         userHandle = user.email.split('@')[0].toLowerCase();
     }
     
@@ -119,7 +130,7 @@ async function loadProfileAndApp(user) {
     fetchGlobalStories();
     fetchTimelineTweets();
 
-    // Run background intervals
+    // Run background synchronization routines
     runSystemSyncEngine();
     clearInterval(systemLoopInterval);
     systemLoopInterval = setInterval(runSystemSyncEngine, 3000);

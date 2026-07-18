@@ -18,7 +18,8 @@
             <h1>Stories</h1>
             <div class="input-box"><input type="email" id="loginEmail" placeholder="Email Address" inputmode="email"></div>
             <div class="input-box"><input type="password" id="loginPassword" placeholder="Password"></div>
-            <button id="loginBtn">Log In</button>
+            <!-- Added type="button" to halt Chrome autofill hijack loops -->
+            <button type="button" id="loginBtn">Log In</button>
         </div>
         <div id="registerCard" class="auth-box hidden">
             <h1>Stories</h1>
@@ -26,7 +27,8 @@
             <div class="input-box"><input type="email" id="regEmail" placeholder="Email Address" inputmode="email"></div>
             <div class="input-box"><input type="text" id="regUsername" placeholder="Username Handle" autocapitalize="none" autocorrect="off"></div>
             <div class="input-box"><input type="password" id="regPassword" placeholder="Password (6+ chars)"></div>
-            <button id="registerBtn">Sign Up</button>
+            <!-- Added type="button" to halt Chrome autofill hijack loops -->
+            <button type="button" id="registerBtn">Sign Up</button>
         </div>
         <div class="toggle-box"><span id="toggleText">Don't have an account? <span id="toRegisterLink">Sign up</span></span></div>
     </div>
@@ -112,8 +114,9 @@
     </div>
 
     <!-- MAIN APP INITIALIZATION BOOTSTRAP -->
+    <!-- Integrated cache-busting version strings to force Chrome to read your updated script updates -->
     <script type="module">
-        import { initApplicationEngine } from './js/auth.js';
+        import { initApplicationEngine } from './js/auth.js?v=1.2';
         document.addEventListener('DOMContentLoaded', initApplicationEngine);
     </script>
 </body>

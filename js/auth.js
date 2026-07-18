@@ -100,16 +100,27 @@ async function loadProfileAndApp(user) {
     document.getElementById('authSection').classList.add('hidden');
     document.getElementById('appSection').classList.remove('hidden');
     
-    const { data } = await dbClient.from('profiles').select('username').eq('id', user.id).single();
-    const profile = data || { username: "user" };
+    // Explicitly pull the profile row linked to the user's ID
+    const { data, error } = await dbClient.from('profiles').select('username').eq('id', user.id).maybeSingle();
     
+    // Fallback gracefully to email prefix if the custom username row isn't found
+    let userHandle = "user";
+    if (data && data.username) {
+        userHandle = data.username;
+    } else if (user.email) {
+        userHandle = user.email.split('@')[0].toLowerCase();
+    }
+    
+    const profile = { username: userHandle };
     updateStateUser(user, profile);
+    
     document.getElementById('welcomeMsg').innerText = `@${profile.username}`;
     
     fetchGlobalStories();
     fetchTimelineTweets();
 
-    // Run interval background thread loop workers
+    // Run background intervals
     runSystemSyncEngine();
+    clearInterval(systemLoopInterval);
     systemLoopInterval = setInterval(runSystemSyncEngine, 3000);
 }

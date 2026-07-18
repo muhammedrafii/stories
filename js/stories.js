@@ -24,11 +24,12 @@ export async function fetchGlobalStories() {
         bubble.onclick = () => viewStory(story.content, story.username);
         
         const isImage = story.content.startsWith('http://') || story.content.startsWith('https://');
-        const avatarContent = isImage ? `<img src="${story.content}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : story.username.substring(0,2).toUpperCase();
+        const avatarContent = isImage ? `<img src="${story.content}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : (story.username || 'U').substring(0,2).toUpperCase();
 
+        // Displays the actual story creator's username handle dynamically
         bubble.innerHTML = `
             <div class="avatar">${avatarContent}</div>
-            <div class="username-label">@${story.username}</div>
+            <div class="username-label">@${story.username || 'user'}</div>
         `;
 
         if (now - storyTime < twentyFourHours) {
@@ -46,8 +47,14 @@ async function postStory() {
     let finalContent = urlInput.value.trim() || capInput.value.trim();
     
     if(!finalContent) return alert("Please add an Image URL link or text description.");
+    if(!state.currentProfile || !state.currentProfile.username) return alert("Profile session not loaded yet.");
 
-    await dbClient.from('stories').insert([{ user_id: state.currentUser.id, username: state.currentProfile.username, content: finalContent }]);
+    await dbClient.from('stories').insert([{ 
+        user_id: state.currentUser.id, 
+        username: state.currentProfile.username, 
+        content: finalContent 
+    }]);
+    
     urlInput.value = ''; capInput.value = '';
     setActiveDrawer(''); 
     fetchGlobalStories();
@@ -58,9 +65,9 @@ function viewStory(content, author) {
     const isImage = content.startsWith('http://') || content.startsWith('https://');
     
     if (isImage) {
-        container.innerHTML = `<h4 style="margin:5px;">@${author}</h4><img src="${content}">`;
+        container.innerHTML = `<h4 style="margin:5px;">@${author || 'user'}</h4><img src="${content}">`;
     } else {
-        container.innerHTML = `<span style="font-size:14px; color:#aaa; display:block;">@${author}</span><p>${content}</p>`;
+        container.innerHTML = `<span style="font-size:14px; color:#aaa; display:block;">@${author || 'user'}</span><p>${content}</p>`;
     }
     document.getElementById('storyModal').classList.remove('hidden');
 }

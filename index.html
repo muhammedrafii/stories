@@ -2,12 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- Mobile optimization: Prevents scaling bugs and double-tap zoom delay -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Global Social Hub</title>
-    <!-- Core CSS Style Sheet Injection -->
     <link rel="stylesheet" href="css/styles.css">
-    <!-- Supabase Core Engine Asset -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -18,16 +15,14 @@
             <h1>Stories</h1>
             <div class="input-box"><input type="email" id="loginEmail" placeholder="Email Address" inputmode="email"></div>
             <div class="input-box"><input type="password" id="loginPassword" placeholder="Password"></div>
-            <!-- Added type="button" to halt Chrome autofill hijack loops -->
             <button type="button" id="loginBtn">Log In</button>
         </div>
         <div id="registerCard" class="auth-box hidden">
             <h1>Stories</h1>
-            <p>Sign up to view public photos and text feeds worldwide.</p>
+            <p>Sign up to view public text feeds worldwide.</p>
             <div class="input-box"><input type="email" id="regEmail" placeholder="Email Address" inputmode="email"></div>
             <div class="input-box"><input type="text" id="regUsername" placeholder="Username Handle" autocapitalize="none" autocorrect="off"></div>
             <div class="input-box"><input type="password" id="regPassword" placeholder="Password (6+ chars)"></div>
-            <!-- Added type="button" to halt Chrome autofill hijack loops -->
             <button type="button" id="registerBtn">Sign Up</button>
         </div>
         <div class="toggle-box"><span id="toggleText">Don't have an account? <span id="toRegisterLink">Sign up</span></span></div>
@@ -54,9 +49,8 @@
 
             <!-- POSITION 2 DRAWER: PUBLISHING POST MATRIX -->
             <div id="postDrawer" class="drawer-box hidden">
-                <h5 style="color:#de005f;">Create Photo Story</h5>
+                <h5 style="color:#de005f;">Create Text Story</h5>
                 <div class="flex-inputs">
-                    <input type="url" id="storyImgUrl" placeholder="Paste Image URL Link..." inputmode="url">
                     <input type="text" id="storyCaption" placeholder="Add story text details...">
                 </div>
                 <button id="submitStoryBtn" style="background: #de005f; margin-bottom:16px;">Publish Live Story</button>
@@ -68,25 +62,52 @@
                 <button id="submitTweetBtn" style="background: var(--twitter-blue);">Broadcast Feed</button>
             </div>
 
-            <!-- POSITION 3 DRAWER: DIRECT MESSAGES & HISTORIC CHATS -->
-            <div id="chatDrawer" class="drawer-box hidden">
-                <h5>Recent Conversations</h5>
-                <div class="recent-chats-container" id="recentChatsList"></div>
+            <!-- POSITION 3 DRAWER: DIRECT MESSAGES (WHATSAPP LIGHT MODE STYLE) -->
+            <div id="chatDrawer" class="drawer-box hidden" style="padding: 0; background: #ffffff; color: #000000; display: flex; flex-direction: column; height: 500px; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                
+                <!-- ==================== VIEW 1: INBOX SCREEN ==================== -->
+                <div id="chatInboxView" style="display: flex; flex-direction: column; height: 100%;">
+                    <!-- Search bar pinned strictly to the top -->
+                    <div style="position: relative; padding: 14px; border-bottom: 1px solid #f0f2f5; background: #ffffff;">
+                        <input type="text" id="chatTargetUser" placeholder="🔍 Search profiles to chat..." autocapitalize="none" autocomplete="off" style="width:100%; padding:10px 14px; background:#f0f2f5; border:none; border-radius:10px; color:#000000; font-size:14px; outline: none;">
+                        
+                        <!-- Floating live lookup dropdown matches -->
+                        <div id="chatSearchDropdown" class="hidden" style="position: absolute; top: 100%; left: 14px; right: 14px; border: 1px solid #e0e0e0; border-radius: 8px; z-index: 3000; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; margin-top: 4px; background: #ffffff;"></div>
+                    </div>
 
-                <h5 id="chatTargetTitle">Select a user above or search below</h5>
-                <div class="flex-inputs">
-                    <input type="text" id="chatTargetUser" placeholder="Or enter recipient username..." autocapitalize="none">
+                    <!-- Vertical scrollable message threads list -->
+                    <div class="recent-chats-vertical-list" id="recentChatsList" style="flex: 1; overflow-y: auto; padding: 4px 0; display: flex; flex-direction: column; background: #ffffff;">
+                        <!-- Appended chat threads appear here -->
+                    </div>
                 </div>
-                <div class="chat-logs" id="chatLogsBox"></div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <input type="text" id="chatMsgInput" placeholder="Type direct message..." style="flex:1; padding:12px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
-                    <button id="sendChatMsgBtn" style="width:auto; background:var(--accent); padding:12px 18px; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px;">Send</button>
+
+                <!-- ==================== VIEW 2: ACTIVE CHAT SCREEN ==================== -->
+                <div id="chatConversationView" class="hidden" style="display: flex; flex-direction: column; height: 100%; background: #efeae2;">
+                    <!-- Top header bar with Back button and Recipient profile info -->
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f0f2f5; border-bottom: 1px solid #e0e0e0;">
+                        <button id="chatBackButton" style="background: none; border: none; color: #008069; font-size: 20px; cursor: pointer; padding: 0 4px; font-weight: bold;">←</button>
+                        <div id="activeChatAvatar" style="width:36px; height:36px; background:#e1f5fe; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; color:#039be5; font-size:13px; border: 1px solid #b3e5fc;">--</div>
+                        <h5 id="chatTargetTitle" style="font-size: 15px; font-weight: 600; margin: 0; color: #000000;">@username</h5>
+                    </div>
+
+                    <!-- Scrollable messaging dialogue container -->
+                    <div class="chat-logs" id="chatLogsBox" style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;">
+                        <!-- Message bubbles inject here -->
+                    </div>
+                    
+                    <!-- Sticky message composer input deck -->
+                    <div style="display: flex; gap: 8px; align-items: center; padding: 10px 14px; background: #f0f2f5; border-top: 1px solid #e0e0e0;">
+                        <input type="text" id="chatMsgInput" placeholder="Type a message" style="flex:1; padding:10px 16px; border: 1px solid #ffffff; background:#ffffff; color:#000000; border-radius:20px; font-size:14px; outline: none; box-shadow: 0 1px 1px rgba(0,0,0,0.05);">
+                        <button id="sendChatMsgBtn" style="background:none; border:none; color:#008069; font-weight:700; cursor:pointer; font-size:15px; padding: 0 8px;">Send</button>
+                    </div>
                 </div>
             </div>
 
             <!-- GLOBAL INTERACTION FEED TIMELINE -->
-            <h4 style="margin: 15px 0 10px 0; border-bottom: 2px solid #eee; padding-bottom: 6px; font-size: 16px;">Global Stream</h4>
-            <div id="timelineFeed"></div>
+            <div id="homeTimelineWrapper">
+                <h4 style="margin: 15px 0 10px 0; border-bottom: 2px solid #eee; padding-bottom: 6px; font-size: 16px;">Global Stream</h4>
+                <div id="timelineFeed"></div>
+            </div>
 
             <!-- EXPIRED HIGHLIGHTS ARCHIVE -->
             <h4 style="margin: 30px 0 10px 0; font-size: 13px; color: var(--secondary-text);">Past Highlights (>24h)</h4>
@@ -110,13 +131,16 @@
     <!-- STORY DETAILED MODAL VIEWER -->
     <div id="storyModal" class="modal hidden">
         <div class="modal-content" id="modalText"></div>
+        <div id="storyReplyContainer" style="margin-bottom: 20px; display: flex; gap: 8px; width: 90%; max-width: 400px;">
+            <input type="text" id="storyReplyInput" placeholder="Send a reply..." style="flex:1; padding:12px; border-radius:20px; border:1px solid #555; background:#222; color:#fff; font-size:15px;">
+            <button id="sendStoryReplyBtn" style="padding:12px 20px; background:#0095f6; color:#fff; border:none; border-radius:20px; font-weight:bold; cursor:pointer;">Send</button>
+        </div>
         <button id="closeStoryModalBtn" style="padding: 12px 30px; background: white; color:black; border:none; border-radius:25px; font-weight:bold; cursor:pointer; font-size:16px;">Close</button>
     </div>
 
     <!-- MAIN APP INITIALIZATION BOOTSTRAP -->
-    <!-- Integrated cache-busting version strings to force Chrome to read your updated script updates -->
     <script type="module">
-        import { initApplicationEngine } from './js/auth.js?v=1.2';
+        import { initApplicationEngine } from './js/auth.js?v=1.3';
         document.addEventListener('DOMContentLoaded', initApplicationEngine);
     </script>
 </body>

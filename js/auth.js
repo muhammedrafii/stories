@@ -1,7 +1,8 @@
 import { dbClient, updateStateUser, state } from './config.js';
 import { fetchGlobalStories, setupStoryListeners } from './stories.js';
 import { fetchTimelineTweets, setupTimelineListeners } from './timeline.js';
-import { runSystemSyncEngine, setupChatListeners } from './chat.js';
+// Imported the chat notifications and history listing function here:
+import { runSystemSyncEngine, setupChatListeners, checkChatNotificationsAndHistory } from './chat.js';
 
 let systemLoopInterval = null;
 
@@ -44,8 +45,11 @@ export function setActiveDrawer(panel) {
             const isHidden = el.classList.contains('hidden');
             el.classList.toggle('hidden', !isHidden);
             nav.classList.toggle('active', isHidden);
-            if(panel === 'chat' && isHidden) {
+            
+            if (panel === 'chat' && isHidden) {
                 document.getElementById('chatNotificationCount').classList.add('hidden');
+                // TRIGGER INSTANT LIST REFRESH WHENEVER DRAWER IS OPENED:
+                checkChatNotificationsAndHistory();
             }
         } else {
             el.classList.add('hidden');

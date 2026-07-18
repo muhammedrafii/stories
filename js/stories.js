@@ -1,77 +1,177 @@
 import { dbClient, state } from './config.js';
 import { setActiveDrawer } from './auth.js';
 
+let activeLoadedStoriesList = [];
+let currentViewingStoryIndex = -1;
+
 export function setupStoryListeners() {
     document.getElementById('submitStoryBtn').addEventListener('click', postStory);
     document.getElementById('closeStoryModalBtn').addEventListener('click', closeStory);
+    document.getElementById('sendStoryReplyBtn').addEventListener('click', submitStoryReply);
 }
 
 export async function fetchGlobalStories() {
-    const { data: allStories } = await dbClient.from('stories').select('*').order('created_at', { ascending: false });
+    const { data: allStories } = await dbClient
+        .from('stories')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
     if (!allStories) return;
+
+    activeLoadedStoriesList = allStories;
 
     const activeTray = document.getElementById('activeStoriesTray');
     const highlightsTray = document.getElementById('highlightsTray');
-    activeTray.innerHTML = ''; highlightsTray.innerHTML = '';
+    
+    const activeFragment = document.createDocumentFragment();
+    const highlightsFragment = document.createDocumentFragment();
 
     const now = new Date().getTime();
     const twentyFourHours = 24 * 60 * 60 * 1000;
 
-    allStories.forEach(story => {
+    allStories.forEach((story, index) => {
         const storyTime = new Date(story.created_at).getTime();
         const bubble = document.createElement('div');
         bubble.className = "story-bubble";
-        bubble.onclick = () => viewStory(story.content, story.username);
+        bubble.onclick = () => launchStoryViewerAtIndex(index);
         
-        const isImage = story.content.startsWith('http://') || story.content.startsWith('https://');
-        const avatarContent = isImage ? `<img src="${story.content}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : (story.username || 'U').substring(0,2).toUpperCase();
+        const avatarContent = (story.username || 'U').substring(0,2).toUpperCase();
 
-        // Displays the actual story creator's username handle dynamically
         bubble.innerHTML = `
-            <div class="avatar">${avatarContent}</div>
+            <div class="avatar" style="background:#eaeaea; color:#333; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:bold;">${avatarContent}</div>
             <div class="username-label">@${story.username || 'user'}</div>
         `;
 
         if (now - storyTime < twentyFourHours) {
-            activeTray.appendChild(bubble);
+            activeFragment.appendChild(bubble);
         } else {
             bubble.classList.add('highlight-bubble');
-            highlightsTray.appendChild(bubble);
+            highlightsFragment.appendChild(bubble);
         }
     });
+
+    activeTray.innerHTML = ''; 
+    highlightsTray.innerHTML = '';
+    activeTray.appendChild(activeFragment);
+    highlightsTray.appendChild(highlightsFragment);
+}
+
+async function launchStoryViewerAtIndex(index) {
+    if (index < 0 || index >= activeLoadedStoriesList.length) return;
+    currentViewingStoryIndex = index;
+    
+    const story = activeLoadedStoriesList[index];
+    const container = document.getElementById('modalText');
+    
+    document.getElementById('storyReplyInput').value = '';
+
+    let currentViewsArray = Array.isArray(story.viewed_by) ? [...story.viewed_by] : [];
+    const isOwnStory = state.currentProfile && story.username === state.currentProfile.username;
+
+    // 1. If it's someone else's story, record the view history profile item
+    if (!isOwnStory && state.currentUser) {
+        if (!currentViewsArray.some(viewer => viewer.id === state.currentUser.id)) {
+            // Store both user ID and current username handle for instant rendering later
+            currentViewsArray.push({
+                id: state.currentUser.id,
+                username: state.currentProfile.username
+            });
+            story.viewed_by = currentViewsArray;
+            
+            await dbClient.from('stories').update({ viewed_by: currentViewsArray }).eq('id', story.id);
+        }
+    }
+
+    // 2. Build explicit viewer details list layout if it is the author checking metrics
+    let trackingHTML = '';
+    if (isOwnStory) {
+        const totalViews = currentViewsArray.length;
+        let viewersListHTML = '<span style="color:#aaa; font-size:11px;">No views yet</span>';
+        
+        if (totalViews > 0) {
+            viewersListHTML = currentViewsArray
+                .map(viewer => `<span style="background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:12px; font-size:12px; color:#fff;">@${viewer.username || 'unknown'}</span>`)
+                .join(' ');
+        }
+
+        trackingHTML = `
+            <div style="text-align:center; margin-top:20px; width:100%; display:flex; flex-direction:column; gap:8px; align-items:center;">
+                <div style="font-size:14px; color:#a3e635; font-weight:bold; letter-spacing:0.5px;">👁️ ${totalViews} ${totalViews === 1 ? 'view' : 'views'}</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:center; max-height:80px; overflow-y:auto; padding:5px; width:90%;">
+                    ${viewersListHTML}
+                </div>
+            </div>
+        `;
+    }
+
+    // 3. Update DOM Tree
+    container.innerHTML = `
+        <span style="font-size:16px; color:#aaa; display:block; margin-bottom:12px;">@${story.username || 'user'}</span>
+        <p style="font-size:24px; line-height:34px; color:#fff; font-weight:500; word-break:break-word; max-width:85%; margin:0 auto;">"${story.content}"</p>
+        ${trackingHTML}
+    `;
+
+    const replyContainer = document.getElementById('storyReplyContainer');
+    if (replyContainer) {
+        if (isOwnStory) {
+            replyContainer.classList.add('hidden');
+        } else {
+            replyContainer.classList.remove('hidden');
+        }
+    }
+
+    document.getElementById('storyModal').classList.remove('hidden');
+}
+
+async function submitStoryReply() {
+    if (currentViewingStoryIndex === -1) return;
+    
+    const targetStory = activeLoadedStoriesList[currentViewingStoryIndex];
+    const replyText = document.getElementById('storyReplyInput').value.trim();
+    
+    if (!replyText) return;
+    if (!state.currentProfile) return alert("Session profile data not ready.");
+
+    const contextTag = `[Replied to your Story: "${targetStory.content.substring(0, 15)}..."]`;
+    const finalMessagePayload = `${contextTag} ${replyText}`;
+
+    const { error } = await dbClient.from('private_messages').insert([
+        { 
+            sender_username: state.currentProfile.username, 
+            receiver_username: targetStory.username, 
+            message_text: finalMessagePayload 
+        }
+    ]);
+
+    if (error) {
+        alert("Could not send reply: " + error.message);
+    } else {
+        document.getElementById('storyReplyInput').value = '';
+        alert(`Reply delivered straight to @${targetStory.username}'s inbox!`);
+        closeStory();
+    }
 }
 
 async function postStory() {
-    const urlInput = document.getElementById('storyImgUrl');
     const capInput = document.getElementById('storyCaption');
-    let finalContent = urlInput.value.trim() || capInput.value.trim();
+    let finalContent = capInput.value.trim();
     
-    if(!finalContent) return alert("Please add an Image URL link or text description.");
+    if(!finalContent) return alert("Please add a text description.");
     if(!state.currentProfile || !state.currentProfile.username) return alert("Profile session not loaded yet.");
 
     await dbClient.from('stories').insert([{ 
         user_id: state.currentUser.id, 
         username: state.currentProfile.username, 
-        content: finalContent 
+        content: finalContent,
+        viewed_by: []
     }]);
     
-    urlInput.value = ''; capInput.value = '';
+    capInput.value = '';
     setActiveDrawer(''); 
     fetchGlobalStories();
 }
 
-function viewStory(content, author) {
-    const container = document.getElementById('modalText');
-    const isImage = content.startsWith('http://') || content.startsWith('https://');
-    
-    if (isImage) {
-        container.innerHTML = `<h4 style="margin:5px;">@${author || 'user'}</h4><img src="${content}">`;
-    } else {
-        container.innerHTML = `<span style="font-size:14px; color:#aaa; display:block;">@${author || 'user'}</span><p>${content}</p>`;
-    }
-    document.getElementById('storyModal').classList.remove('hidden');
-}
-
 function closeStory() { 
+    currentViewingStoryIndex = -1;
     document.getElementById('storyModal').classList.add('hidden'); 
 }

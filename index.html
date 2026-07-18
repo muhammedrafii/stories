@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Mobile optimization: Prevents scaling bugs and double-tap zoom delay -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Global Social Hub</title>
+    <!-- Core CSS Style Sheet Injection -->
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- Supabase Core Engine Asset -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <!-- AUTHENTICATION CONTAINER WINDOW -->
+    <div id="authSection" class="auth-container">
+        <div id="loginCard" class="auth-box">
+            <h1>Stories</h1>
+            <div class="input-box"><input type="email" id="loginEmail" placeholder="Email Address" inputmode="email"></div>
+            <div class="input-box"><input type="password" id="loginPassword" placeholder="Password"></div>
+            <button id="loginBtn">Log In</button>
+        </div>
+        <div id="registerCard" class="auth-box hidden">
+            <h1>Stories</h1>
+            <p>Sign up to view public photos and text feeds worldwide.</p>
+            <div class="input-box"><input type="email" id="regEmail" placeholder="Email Address" inputmode="email"></div>
+            <div class="input-box"><input type="text" id="regUsername" placeholder="Username Handle" autocapitalize="none" autocorrect="off"></div>
+            <div class="input-box"><input type="password" id="regPassword" placeholder="Password (6+ chars)"></div>
+            <button id="registerBtn">Sign Up</button>
+        </div>
+        <div class="toggle-box"><span id="toggleText">Don't have an account? <span id="toRegisterLink">Sign up</span></span></div>
+    </div>
+
+    <!-- MAIN APP SCREEN CONTAINER -->
+    <div id="appSection" class="app-container hidden">
+        <div class="app-header">
+            <h3 id="welcomeMsg">@username</h3>
+            <button id="logoutBtn" style="background:none; border:none; color:#ef4444; font-weight:600; cursor:pointer; padding: 8px;">Log Out</button>
+        </div>
+
+        <div class="app-content">
+            <!-- INSTAGRAM STORIES TRAY -->
+            <div class="story-tray" id="activeStoriesTray"></div>
+
+            <!-- POSITION 1 DRAWER: USER SEARCH UTILITY -->
+            <div id="searchDrawer" class="drawer-box hidden">
+                <h5>Search Profile Handles</h5>
+                <div class="flex-inputs">
+                    <input type="text" id="globalSearchInput" placeholder="Type username key to filter posts..." autocapitalize="none">
+                </div>
+            </div>
+
+            <!-- POSITION 2 DRAWER: PUBLISHING POST MATRIX -->
+            <div id="postDrawer" class="drawer-box hidden">
+                <h5 style="color:#de005f;">Create Photo Story</h5>
+                <div class="flex-inputs">
+                    <input type="url" id="storyImgUrl" placeholder="Paste Image URL Link..." inputmode="url">
+                    <input type="text" id="storyCaption" placeholder="Add story text details...">
+                </div>
+                <button id="submitStoryBtn" style="background: #de005f; margin-bottom:16px;">Publish Live Story</button>
+
+                <h5 style="color:var(--twitter-blue);">Write Tweet Post</h5>
+                <div class="flex-inputs">
+                    <input type="text" id="tweetText" placeholder="What is happening right now?">
+                </div>
+                <button id="submitTweetBtn" style="background: var(--twitter-blue);">Broadcast Feed</button>
+            </div>
+
+            <!-- POSITION 3 DRAWER: DIRECT MESSAGES & HISTORIC CHATS -->
+            <div id="chatDrawer" class="drawer-box hidden">
+                <h5>Recent Conversations</h5>
+                <div class="recent-chats-container" id="recentChatsList"></div>
+
+                <h5 id="chatTargetTitle">Select a user above or search below</h5>
+                <div class="flex-inputs">
+                    <input type="text" id="chatTargetUser" placeholder="Or enter recipient username..." autocapitalize="none">
+                </div>
+                <div class="chat-logs" id="chatLogsBox"></div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="text" id="chatMsgInput" placeholder="Type direct message..." style="flex:1; padding:12px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
+                    <button id="sendChatMsgBtn" style="width:auto; background:var(--accent); padding:12px 18px; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:15px;">Send</button>
+                </div>
+            </div>
+
+            <!-- GLOBAL INTERACTION FEED TIMELINE -->
+            <h4 style="margin: 15px 0 10px 0; border-bottom: 2px solid #eee; padding-bottom: 6px; font-size: 16px;">Global Stream</h4>
+            <div id="timelineFeed"></div>
+
+            <!-- EXPIRED HIGHLIGHTS ARCHIVE -->
+            <h4 style="margin: 30px 0 10px 0; font-size: 13px; color: var(--secondary-text);">Past Highlights (>24h)</h4>
+            <div class="story-tray" id="highlightsTray"></div>
+        </div>
+
+        <!-- STICKY BOTTOM NAVIGATION TOOLBAR -->
+        <div class="bottom-nav">
+            <div class="nav-item" id="navSearch">
+                🔍<span>Search</span>
+            </div>
+            <div class="nav-item" id="navPost">
+                ➕<span>Post</span>
+            </div>
+            <div class="nav-item" id="navChat">
+                💬<span id="chatNotificationCount" class="badge hidden">0</span><span>Chat</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- STORY DETAILED MODAL VIEWER -->
+    <div id="storyModal" class="modal hidden">
+        <div class="modal-content" id="modalText"></div>
+        <button id="closeStoryModalBtn" style="padding: 12px 30px; background: white; color:black; border:none; border-radius:25px; font-weight:bold; cursor:pointer; font-size:16px;">Close</button>
+    </div>
+
+    <!-- MAIN APP INITIALIZATION BOOTSTRAP -->
+    <script type="module">
+        import { initApplicationEngine } from './js/auth.js';
+        document.addEventListener('DOMContentLoaded', initApplicationEngine);
+    </script>
+</body>
+</html>

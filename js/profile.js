@@ -177,4 +177,4 @@ async function handleProfileUpdate() {
         saveBtn.disabled = false;
         saveBtn.innerText = "Update Profile";
     }
-}
+} 

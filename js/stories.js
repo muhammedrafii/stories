@@ -1,3 +1,5 @@
+// js/stories.js
+
 import { dbClient, state } from './config.js';
 import { setActiveDrawer } from './auth.js';
 
@@ -8,6 +10,23 @@ export function setupStoryListeners() {
     document.getElementById('submitStoryBtn').addEventListener('click', postStory);
     document.getElementById('closeStoryModalBtn').addEventListener('click', closeStory);
     document.getElementById('sendStoryReplyBtn').addEventListener('click', submitStoryReply);
+
+    // INSTAGRAM FIX: Toggle Send button visibility dynamically as the user types
+    const replyInput = document.getElementById('storyReplyInput');
+    const sendReplyBtn = document.getElementById('sendStoryReplyBtn');
+    
+    if (replyInput && sendReplyBtn) {
+        // Ensure it starts hidden on initial load
+        sendReplyBtn.style.display = 'none';
+
+        replyInput.addEventListener('input', (e) => {
+            if (e.target.value.trim().length > 0) {
+                sendReplyBtn.style.display = 'block'; // Show when text exists
+            } else {
+                sendReplyBtn.style.display = 'none';  // Hide when blank
+            }
+        });
+    }
 }
 
 export async function fetchGlobalStories() {
@@ -23,6 +42,8 @@ export async function fetchGlobalStories() {
     const activeTray = document.getElementById('activeStoriesTray');
     const highlightsTray = document.getElementById('highlightsTray');
     
+    if (!activeTray || !highlightsTray) return;
+
     const activeFragment = document.createDocumentFragment();
     const highlightsFragment = document.createDocumentFragment();
 
@@ -35,7 +56,7 @@ export async function fetchGlobalStories() {
         bubble.className = "story-bubble";
         bubble.onclick = () => launchStoryViewerAtIndex(index);
         
-        const avatarContent = (story.username || 'U').substring(0,2).toUpperCase();
+        const avatarContent = (story.username || 'U').substring(0, 2).toUpperCase();
 
         bubble.innerHTML = `
             <div class="avatar" style="background:#eaeaea; color:#333; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:bold;">${avatarContent}</div>
@@ -62,8 +83,14 @@ async function launchStoryViewerAtIndex(index) {
     
     const story = activeLoadedStoriesList[index];
     const container = document.getElementById('modalText');
+    if (!container) return;
     
-    document.getElementById('storyReplyInput').value = '';
+    // Clear the input and reset the Send button to hidden when opening a new story
+    const replyInput = document.getElementById('storyReplyInput');
+    if (replyInput) replyInput.value = '';
+    
+    const sendReplyBtn = document.getElementById('sendStoryReplyBtn');
+    if (sendReplyBtn) sendReplyBtn.style.display = 'none';
 
     let currentViewsArray = Array.isArray(story.viewed_by) ? [...story.viewed_by] : [];
     const isOwnStory = state.currentProfile && story.username === state.currentProfile.username;
@@ -71,7 +98,6 @@ async function launchStoryViewerAtIndex(index) {
     // 1. If it's someone else's story, record the view history profile item
     if (!isOwnStory && state.currentUser) {
         if (!currentViewsArray.some(viewer => viewer.id === state.currentUser.id)) {
-            // Store both user ID and current username handle for instant rendering later
             currentViewsArray.push({
                 id: state.currentUser.id,
                 username: state.currentProfile.username
@@ -147,6 +173,9 @@ async function submitStoryReply() {
         alert("Could not send reply: " + error.message);
     } else {
         document.getElementById('storyReplyInput').value = '';
+        const sendReplyBtn = document.getElementById('sendStoryReplyBtn');
+        if (sendReplyBtn) sendReplyBtn.style.display = 'none'; // Hide it back after reset
+        
         alert(`Reply delivered straight to @${targetStory.username}'s inbox!`);
         closeStory();
     }
@@ -154,20 +183,29 @@ async function submitStoryReply() {
 
 async function postStory() {
     const capInput = document.getElementById('storyCaption');
+    if (!capInput) return;
+    
     let finalContent = capInput.value.trim();
     
-    if(!finalContent) return alert("Please add a text description.");
-    if(!state.currentProfile || !state.currentProfile.username) return alert("Profile session not loaded yet.");
+    if (!finalContent) return alert("Please add a text description.");
+    if (!state.currentUser) return alert("Session data not ready.");
+    if (!state.currentProfile || !state.currentProfile.username) return alert("Profile session not loaded yet.");
 
-    await dbClient.from('stories').insert([{ 
-        user_id: state.currentUser.id, 
+    const { error } = await dbClient.from('stories').insert([{ 
+        user_id: state.currentUser.id, // FIX: Corrected state reference context key
         username: state.currentProfile.username, 
         content: finalContent,
         viewed_by: []
     }]);
     
+    if (error) {
+        alert("Could not post story: " + error.message);
+        return;
+    }
+    
     capInput.value = '';
-    setActiveDrawer(''); 
+    // Pass 'post' to properly close the active drawer logic loop
+    setActiveDrawer('post'); 
     fetchGlobalStories();
 }
 

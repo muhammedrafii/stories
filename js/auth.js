@@ -188,8 +188,18 @@ async function handleSignUp() {
             return alert(`Database Error: ${profileError.message}`);
         }
         
-        alert("Registration successful! You can now log in.");
-        showAuthScreen('login');
+        // 4. AUTO-LOGIN & REDIRECT TO HOME PAGE
+        if (data.session) {
+            // If email verification is OFF in Supabase, onAuthStateChange fires automatically to load the home page.
+            return;
+        }
+
+        // If email verification is ON or active session was not returned, log in directly using the user's input
+        const { error: loginError } = await dbClient.auth.signInWithPassword({ email, password });
+        if (loginError) {
+            alert("Registration successful! Please log in.");
+            showAuthScreen('login');
+        }
     } else {
         alert("Sign up complete! Please check your email inbox to confirm registration link.");
     }

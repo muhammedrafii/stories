@@ -18,7 +18,9 @@ export function setupTimelineListeners() {
     }
 }
 
-export async function postTweet() {
+export async function postTweet(e) {
+    if (e) e.preventDefault(); // Stop any default form reload
+    
     const input = document.getElementById('tweetText');
     if (!input) return;
 
@@ -145,9 +147,9 @@ async function renderFeedLayout(postsArray, containerId) {
             </div>
             <div class="tweet-body">${post.content}</div>
             <div class="tweet-actions">
-                <div class="action-btn" data-id="${post.id}" data-action="up">🔺 <span>${upvotes}</span></div>
-                <div class="action-btn" data-id="${post.id}" data-action="down">🔻 <span>${downvotes}</span></div>
-                <div class="action-btn" data-id="${post.id}" data-action="comment-toggle">💬 <span>${commentsList.length}</span></div>
+                <button type="button" class="action-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer;">🔺 <span class="vote-count">${upvotes}</span></button>
+                <button type="button" class="action-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer;">🔻 <span class="vote-count">${downvotes}</span></button>
+                <button type="button" class="action-btn" data-id="${post.id}" data-action="comment-toggle" style="background:none; border:none; cursor:pointer;">💬 <span class="comment-count">${commentsList.length}</span></button>
             </div>
             
             <div id="commentBox-${containerId}-${post.id}" class="comment-drawer hidden">
@@ -156,18 +158,18 @@ async function renderFeedLayout(postsArray, containerId) {
                 </div>
                 <div style="display:flex; gap:4px; margin-top:8px;">
                     <input type="text" id="cInput-${containerId}-${post.id}" placeholder="Write a comment..." style="flex:1; padding:4px; font-size:12px; border:1px solid #ccc;">
-                    <button class="reply-submit-btn" data-id="${post.id}" style="padding:4px 8px; font-size:12px; cursor:pointer;">Reply</button>
+                    <button type="button" class="reply-submit-btn" data-id="${post.id}" style="padding:4px 8px; font-size:12px; cursor:pointer;">Reply</button>
                 </div>
             </div>
         `;
 
         // Action listeners
         card.querySelectorAll('.action-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault(); // Stop default button action / page refresh
                 const act = btn.getAttribute('data-action');
-                if(act === 'up') vote(post.id, 'up');
-                if(act === 'down') vote(post.id, 'down');
-                if(act === 'comment-toggle') {
+                if (act === 'up' || act === 'down') vote(e, post.id, act, btn);
+                if (act === 'comment-toggle') {
                     const box = document.getElementById(`commentBox-${containerId}-${post.id}`);
                     if (box) box.classList.toggle('hidden');
                 }
@@ -179,13 +181,17 @@ async function renderFeedLayout(postsArray, containerId) {
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 deletePost(post.id);
             });
         }
 
         const replyBtn = card.querySelector('.reply-submit-btn');
         if (replyBtn) {
-            replyBtn.addEventListener('click', () => submitComment(post.id, containerId));
+            replyBtn.addEventListener('click', (e) => {
+                e.preventDefault(); // Stop form submit page refresh
+                submitComment(e, post.id, containerId, card);
+            });
         }
 
         timeline.appendChild(card);
@@ -196,10 +202,8 @@ export async function deletePost(postId) {
     if (!confirm("Are you sure you want to delete this post?")) return;
 
     try {
-        // Delete related comments first (if foreign keys do not cascade delete)
         await dbClient.from('comments').delete().eq('post_id', postId);
 
-        // Delete post entry
         const { error } = await dbClient
             .from('posts')
             .delete()
@@ -207,7 +211,6 @@ export async function deletePost(postId) {
 
         if (error) throw error;
 
-        // Re-render timeline
         await fetchTimelineTweets();
     } catch (error) {
         console.error("Error deleting post:", error);
@@ -215,30 +218,69 @@ export async function deletePost(postId) {
     }
 }
 
-async function vote(postId, type) {
-    const { data: post } = await dbClient.from('posts').select(type === 'up' ? 'upvotes' : 'downvotes').eq('id', postId).single();
-    const currentVal = post ? (post[type === 'up' ? 'upvotes' : 'downvotes'] || 0) : 0;
-    
-    await dbClient.from('posts').update({ 
-        [type === 'up' ? 'upvotes' : 'downvotes']: currentVal + 1 
-    }).eq('id', postId);
-    
-    fetchTimelineTweets();
+async function vote(e, postId, type, btnElement) {
+    if (e) e.preventDefault();
+
+    // 1. Instantly update UI count in local DOM
+    const countSpan = btnElement.querySelector('.vote-count');
+    if (countSpan) {
+        countSpan.textContent = parseInt(countSpan.textContent || 0) + 1;
+    }
+
+    // 2. Perform DB update in background without calling fetchTimelineTweets()
+    try {
+        const fieldName = type === 'up' ? 'upvotes' : 'downvotes';
+        const { data: post } = await dbClient.from('posts').select(fieldName).eq('id', postId).single();
+        const currentVal = post ? (post[fieldName] || 0) : 0;
+        
+        await dbClient.from('posts').update({ 
+            [fieldName]: currentVal + 1 
+        }).eq('id', postId);
+    } catch (err) {
+        console.error("Error submitting vote:", err);
+    }
 }
 
-async function submitComment(postId, containerId) {
+async function submitComment(e, postId, containerId, cardElement) {
+    if (e) e.preventDefault();
+
     const input = document.getElementById(`cInput-${containerId}-${postId}`);
     if (!input) return;
 
     const text = input.value.trim();
-    if(!text) return;
+    if (!text) return;
 
-    await dbClient.from('comments').insert([{ 
-        post_id: postId, 
-        username: state.currentProfile.username, 
-        comment_text: text 
-    }]);
-    
-    input.value = '';
-    fetchTimelineTweets();
+    const currentUsername = state.currentProfile?.username || 'User';
+
+    try {
+        // 1. Insert into DB
+        const { error } = await dbClient.from('comments').insert([{ 
+            post_id: postId, 
+            username: currentUsername, 
+            comment_text: text 
+        }]);
+
+        if (error) throw error;
+
+        // 2. Append new comment directly to DOM (No full page reload/re-render)
+        const commentList = document.getElementById(`commentList-${containerId}-${postId}`);
+        if (commentList) {
+            const newComment = document.createElement('div');
+            newComment.className = 'comment-item';
+            newComment.innerHTML = `<strong>@${currentUsername}:</strong> ${text}`;
+            commentList.appendChild(newComment);
+        }
+
+        // 3. Increment comment counter icon dynamically
+        const commentCountBtn = cardElement.querySelector('[data-action="comment-toggle"] .comment-count');
+        if (commentCountBtn) {
+            commentCountBtn.textContent = parseInt(commentCountBtn.textContent || 0) + 1;
+        }
+
+        input.value = ''; // Reset input box
+
+    } catch (err) {
+        console.error("Error posting comment:", err);
+        alert("Could not post comment: " + err.message);
+    }
 }

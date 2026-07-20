@@ -1,0 +1,55 @@
+.input-box { width: 100%; margin-bottom: 12px; }
+.input-box input, .flex-inputs input { 
+    width: 100%; padding: 14px 12px; border: 1px solid #dbdbdb; 
+    border-radius: 8px; background: #fafafa; font-size: 16px; box-sizing: border-box; 
+}
+.auth-box button, .drawer-box button { 
+    background: var(--accent); color: white; border: none; font-weight: 600; 
+    font-size: 16px; padding: 14px; border-radius: 8px; width: 100%; margin-top: 8px; cursor: pointer; 
+}
+.toggle-box { padding: 20px; text-align: center; margin-top: 15px; font-size: 15px; }
+.toggle-box span { color: var(--accent); font-weight: 600; cursor: pointer; }
+
+.story-tray { display: flex; gap: 14px; overflow-x: auto; padding: 14px 0; border-bottom: 1px solid var(--border); margin-bottom: 15px; scrollbar-width: none; }
+.story-tray::-webkit-scrollbar { display: none; }
+.story-bubble { display: flex; flex-direction: column; align-items: center; min-width: 72px; cursor: pointer; }
+
+.avatar { 
+    width: 64px; height: 64px; border-radius: 50%; border: 2.5px solid #de005f; 
+    background: #eaeaea; color: #333; display: flex; align-items: center; justify-content: center; 
+    font-size: 18px; font-weight: 600; box-sizing: border-box;
+}
+.highlight-bubble .avatar { border-color: #dbdbdb; background: #f0f0f0; }
+.username-label { font-size: 12px; margin-top: 6px; text-align: center; width: 100%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; color: #262626; }
+
+.drawer-box { background: #fafdff; border: 1px solid #eef5f9; padding: 16px; border-radius: 12px; margin: 12px 0; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+.drawer-box h5 { margin: 0 0 10px 0; color: var(--secondary-text); text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
+.flex-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+
+.tweet-card { border-bottom: 1px solid var(--border); padding: 16px 4px; display: flex; flex-direction: column; }
+.tweet-header { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: var(--text); }
+.tweet-header span { font-weight: 400; color: var(--secondary-text); margin-left: 6px; font-size: 13px; }
+.tweet-body { font-size: 15px; line-height: 22px; margin-bottom: 12px; white-space: pre-wrap; color: #1a1a1a; }
+.tweet-actions { display: flex; gap: 35px; font-size: 14px; color: var(--secondary-text); padding: 4px 0; }
+.action-btn { cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; min-height: 35px; min-width: 50px; }
+
+.comment-drawer { margin-top: 12px; background: #f9f9f9; border-radius: 8px; padding: 12px; }
+.comment-item { font-size: 13px; margin-bottom: 8px; border-bottom: 1px dashed #e6e6e6; padding-bottom: 6px; }
+
+.bottom-nav { 
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); 
+    width: 100%; max-width: 500px; background: #ffffff; 
+    border-top: 1px solid var(--border); display: flex; 
+    justify-content: space-around; align-items: center; 
+    padding-top: 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom)); 
+    z-index: 2500; box-shadow: 0 -3px 15px rgba(0,0,0,0.04);
+}
+.nav-item { font-size: 24px; cursor: pointer; display: flex; flex-direction: column; align-items: center; color: #262626; position: relative; width: 60px; height: 48px; }
+.nav-item span { font-size: 11px; font-weight: 500; margin-top: 3px; color: var(--secondary-text); }
+.nav-item.active { color: var(--accent); }
+.nav-item.active span { color: var(--accent); font-weight: 700; }
+.badge { position: absolute; top: -3px; right: 2px; background: var(--notification-red); color: white; border-radius: 10px; padding: 2px 7px; font-size: 11px; font-weight: bold; line-height: 1; }
+
+.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000; display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 5000; box-sizing: border-box; }
+.modal-content { text-align: center; width: 100%; max-width: 600px; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: center; }

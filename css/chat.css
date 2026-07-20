@@ -1,0 +1,17 @@
+.chat-logs { height: 260px; overflow-y: auto; padding: 12px; background: #fff; border: 1px solid #ebeeef; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; border-radius: 8px; }
+.msg-bubble { padding: 10px 14px; border-radius: 18px; max-width: 75%; word-break: break-word; font-size: 14px; line-height: 18px; }
+.msg-sent { background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+.msg-rcvd { background: #e5e5ea; color: black; align-self: flex-start; border-bottom-left-radius: 4px; }
+
+.recent-chat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.recent-chat-row:hover {
+    background: #f0f2f5;
+}

@@ -1,6 +1,7 @@
 // js/profile.js
 
 import { dbClient, state, updateStateUser } from './config.js';
+import { fetchGlobalStories } from './stories.js';
 
 let typingTimer; 
 const DEBOUNCE_DELAY = 500; 
@@ -139,6 +140,7 @@ async function handleProfileUpdate() {
     saveBtn.innerText = "Saving changes...";
 
     try {
+        // 1. Update profiles table
         const { error: updateError } = await dbClient
             .from('profiles')
             .update({
@@ -150,7 +152,17 @@ async function handleProfileUpdate() {
 
         if (updateError) throw updateError;
 
-        // FIX: Use state.currentUser to perfectly align with config.js structure
+        // 2. Cascade update to stories table so existing records update their static column
+        const { error: storiesError } = await dbClient
+            .from('stories')
+            .update({ username: cleanUsername })
+            .eq('user_id', userId);
+
+        if (storiesError) {
+            console.warn("Could not sync stories username column:", storiesError.message);
+        }
+
+        // 3. Update local state
         if (state && state.currentUser) {
             const updatedProfile = { 
                 username: cleanUsername, 
@@ -160,13 +172,16 @@ async function handleProfileUpdate() {
             updateStateUser(state.currentUser, updatedProfile);
         }
 
-        // Update global UI elements dynamically
+        // 4. Update global header & profile UI labels
         document.getElementById('welcomeMsg').innerText = `@${cleanUsername}`;
         document.getElementById('profileUsername').innerText = `@${cleanUsername}`;
         
         const initialLetters = cleanUsername.substring(0, 2).toUpperCase();
         document.getElementById('navProfileAvatar').innerText = initialLetters;
         document.getElementById('profileDetailAvatar').innerText = initialLetters;
+
+        // 5. Re-fetch and re-render the global stories feed immediately
+        await fetchGlobalStories();
 
         alert("Profile updated successfully!");
         
@@ -177,4 +192,4 @@ async function handleProfileUpdate() {
         saveBtn.disabled = false;
         saveBtn.innerText = "Update Profile";
     }
-} 
+}

@@ -1,5 +1,3 @@
-// js/stories.js
-
 import { dbClient, state } from './config.js';
 import { setActiveDrawer } from './auth.js';
 
@@ -7,37 +5,50 @@ let activeLoadedStoriesList = [];
 let currentViewingStoryIndex = -1;
 
 export function setupStoryListeners() {
-    document.getElementById('submitStoryBtn').addEventListener('click', postStory);
-    document.getElementById('closeStoryModalBtn').addEventListener('click', closeStory);
-    document.getElementById('sendStoryReplyBtn').addEventListener('click', submitStoryReply);
+    document.getElementById('submitStoryBtn')?.addEventListener('click', postStory);
+    document.getElementById('closeStoryModalBtn')?.addEventListener('click', closeStory);
+    document.getElementById('sendStoryReplyBtn')?.addEventListener('click', submitStoryReply);
+    
+    // Story Delete Listener
+    const deleteBtn = document.getElementById('deleteStoryBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteCurrentStory);
+    }
 
-    // INSTAGRAM FIX: Toggle Send button visibility dynamically as the user types
+    // Toggle Send button visibility dynamically as user types
     const replyInput = document.getElementById('storyReplyInput');
     const sendReplyBtn = document.getElementById('sendStoryReplyBtn');
     
     if (replyInput && sendReplyBtn) {
-        // Ensure it starts hidden on initial load
         sendReplyBtn.style.display = 'none';
 
         replyInput.addEventListener('input', (e) => {
             if (e.target.value.trim().length > 0) {
-                sendReplyBtn.style.display = 'block'; // Show when text exists
+                sendReplyBtn.style.display = 'block';
             } else {
-                sendReplyBtn.style.display = 'none';  // Hide when blank
+                sendReplyBtn.style.display = 'none';
             }
         });
     }
 }
 
 export async function fetchGlobalStories() {
-    const { data: allStories } = await dbClient
+    // Join profiles table to always retrieve the latest username
+    const { data: allStories, error } = await dbClient
         .from('stories')
-        .select('*')
+        .select(`
+            *,
+            profiles ( username )
+        `)
         .order('created_at', { ascending: false });
         
-    if (!allStories) return;
+    if (error || !allStories) return;
 
-    activeLoadedStoriesList = allStories;
+    // Fall back to story.username if profile join is null
+    activeLoadedStoriesList = allStories.map(story => ({
+        ...story,
+        username: story.profiles?.username || story.username || 'user'
+    }));
 
     const activeTray = document.getElementById('activeStoriesTray');
     const highlightsTray = document.getElementById('highlightsTray');
@@ -50,7 +61,7 @@ export async function fetchGlobalStories() {
     const now = new Date().getTime();
     const twentyFourHours = 24 * 60 * 60 * 1000;
 
-    allStories.forEach((story, index) => {
+    activeLoadedStoriesList.forEach((story, index) => {
         const storyTime = new Date(story.created_at).getTime();
         const bubble = document.createElement('div');
         bubble.className = "story-bubble";
@@ -59,7 +70,7 @@ export async function fetchGlobalStories() {
         const avatarContent = (story.username || 'U').substring(0, 2).toUpperCase();
 
         bubble.innerHTML = `
-            <div class="avatar" style="background:#eaeaea; color:#333; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:bold;">${avatarContent}</div>
+            <div class="avatar">${avatarContent}</div>
             <div class="username-label">@${story.username || 'user'}</div>
         `;
 
@@ -85,7 +96,7 @@ async function launchStoryViewerAtIndex(index) {
     const container = document.getElementById('modalText');
     if (!container) return;
     
-    // Clear the input and reset the Send button to hidden when opening a new story
+    // Clear input and reset Send button
     const replyInput = document.getElementById('storyReplyInput');
     if (replyInput) replyInput.value = '';
     
@@ -93,14 +104,35 @@ async function launchStoryViewerAtIndex(index) {
     if (sendReplyBtn) sendReplyBtn.style.display = 'none';
 
     let currentViewsArray = Array.isArray(story.viewed_by) ? [...story.viewed_by] : [];
-    const isOwnStory = state.currentProfile && story.username === state.currentProfile.username;
+    
+    // Normalized Ownership Comparison
+    const myId = state.currentUser?.id;
+    const myUsername = state.currentProfile?.username ? state.currentProfile.username.toLowerCase().trim() : '';
+    const storyUsername = story.username ? story.username.toLowerCase().trim() : '';
 
-    // 1. If it's someone else's story, record the view history profile item
+    const isOwnStory = Boolean(
+        (myId && story.user_id && myId === story.user_id) ||
+        (myUsername && storyUsername && myUsername === storyUsername)
+    );
+
+    // Toggle Delete Button Visibility
+    const deleteBtn = document.getElementById('deleteStoryBtn');
+    if (deleteBtn) {
+        if (isOwnStory) {
+            deleteBtn.classList.remove('hidden');
+            deleteBtn.style.display = 'block'; // Force display override
+        } else {
+            deleteBtn.classList.add('hidden');
+            deleteBtn.style.display = 'none';
+        }
+    }
+
+    // 1. Record view if viewing someone else's story
     if (!isOwnStory && state.currentUser) {
         if (!currentViewsArray.some(viewer => viewer.id === state.currentUser.id)) {
             currentViewsArray.push({
                 id: state.currentUser.id,
-                username: state.currentProfile.username
+                username: state.currentProfile?.username || 'user'
             });
             story.viewed_by = currentViewsArray;
             
@@ -108,7 +140,7 @@ async function launchStoryViewerAtIndex(index) {
         }
     }
 
-    // 2. Build explicit viewer details list layout if it is the author checking metrics
+    // 2. Viewer details list for story author
     let trackingHTML = '';
     if (isOwnStory) {
         const totalViews = currentViewsArray.length;
@@ -130,7 +162,7 @@ async function launchStoryViewerAtIndex(index) {
         `;
     }
 
-    // 3. Update DOM Tree
+    // 3. Update DOM
     container.innerHTML = `
         <span style="font-size:16px; color:#aaa; display:block; margin-bottom:12px;">@${story.username || 'user'}</span>
         <p style="font-size:24px; line-height:34px; color:#fff; font-weight:500; word-break:break-word; max-width:85%; margin:0 auto;">"${story.content}"</p>
@@ -149,6 +181,38 @@ async function launchStoryViewerAtIndex(index) {
     document.getElementById('storyModal').classList.remove('hidden');
 }
 
+async function deleteCurrentStory() {
+    if (currentViewingStoryIndex === -1) return;
+    
+    const targetStory = activeLoadedStoriesList[currentViewingStoryIndex];
+    if (!targetStory || !state.currentUser) return;
+
+    const confirmed = confirm("Are you sure you want to delete this story?");
+    if (!confirmed) return;
+
+    // Delete media from Storage if applicable
+    if (targetStory.media_path) {
+        await dbClient.storage
+            .from('story_media')
+            .remove([targetStory.media_path]);
+    }
+
+    // Delete record by story ID primary key
+    const { error: dbError } = await dbClient
+        .from('stories')
+        .delete()
+        .eq('id', targetStory.id);
+
+    if (dbError) {
+        alert("Could not delete story: " + dbError.message);
+        return;
+    }
+
+    // Cleanup & Refresh
+    closeStory();
+    await fetchGlobalStories();
+}
+
 async function submitStoryReply() {
     if (currentViewingStoryIndex === -1) return;
     
@@ -163,6 +227,8 @@ async function submitStoryReply() {
 
     const { error } = await dbClient.from('private_messages').insert([
         { 
+            sender_id: state.currentUser.id,
+            receiver_id: targetStory.user_id,
             sender_username: state.currentProfile.username, 
             receiver_username: targetStory.username, 
             message_text: finalMessagePayload 
@@ -174,7 +240,7 @@ async function submitStoryReply() {
     } else {
         document.getElementById('storyReplyInput').value = '';
         const sendReplyBtn = document.getElementById('sendStoryReplyBtn');
-        if (sendReplyBtn) sendReplyBtn.style.display = 'none'; // Hide it back after reset
+        if (sendReplyBtn) sendReplyBtn.style.display = 'none';
         
         alert(`Reply delivered straight to @${targetStory.username}'s inbox!`);
         closeStory();
@@ -192,7 +258,7 @@ async function postStory() {
     if (!state.currentProfile || !state.currentProfile.username) return alert("Profile session not loaded yet.");
 
     const { error } = await dbClient.from('stories').insert([{ 
-        user_id: state.currentUser.id, // FIX: Corrected state reference context key
+        user_id: state.currentUser.id,
         username: state.currentProfile.username, 
         content: finalContent,
         viewed_by: []
@@ -204,12 +270,16 @@ async function postStory() {
     }
     
     capInput.value = '';
-    // Pass 'post' to properly close the active drawer logic loop
     setActiveDrawer('post'); 
     fetchGlobalStories();
 }
 
 function closeStory() { 
     currentViewingStoryIndex = -1;
+    const deleteBtn = document.getElementById('deleteStoryBtn');
+    if (deleteBtn) {
+        deleteBtn.classList.add('hidden');
+        deleteBtn.style.display = 'none';
+    }
     document.getElementById('storyModal').classList.add('hidden'); 
 }

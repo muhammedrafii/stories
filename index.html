@@ -162,7 +162,11 @@
 
     <!-- STORY DETAILED MODAL VIEWER (INSTAGRAM STYLE) -->
     <div id="storyModal" class="modal hidden">
-        <div style="width: 100%; display: flex; justify-content: flex-end; padding: calc(16px + env(safe-area-inset-top)) 20px 0 20px; box-sizing: border-box; position: absolute; top: 0; left: 0; z-index: 5002;">
+        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: calc(16px + env(safe-area-inset-top)) 20px 0 20px; box-sizing: border-box; position: absolute; top: 0; left: 0; z-index: 5002;">
+            <!-- DELETE STORY BUTTON (Shown only if user owns active story) -->
+            <button id="deleteStoryBtn" class="hidden" title="Delete Story" style="background: none; border: none; color: #ef4444; font-size: 22px; cursor: pointer; padding: 8px; line-height: 1;">🗑️</button>
+            <div style="flex: 1;"></div>
+            <!-- CLOSE MODAL BUTTON -->
             <button id="closeStoryModalBtn" style="background: none; border: none; color: #ffffff; font-size: 28px; font-weight: 300; cursor: pointer; padding: 8px; line-height: 1;">✕</button>
         </div>
         <div style="flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; padding: 60px 20px; box-sizing: border-box;">

@@ -115,6 +115,15 @@ body {
 .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000; display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 5000; box-sizing: border-box; }
 .modal-content { text-align: center; width: 100%; max-width: 600px; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: center; }
 
+/* Story Action Controls */
+#deleteStoryBtn {
+    transition: opacity 0.2s ease, transform 0.1s ease;
+}
+#deleteStoryBtn:active {
+    transform: scale(0.9);
+    opacity: 0.8;
+}
+
 .recent-chat-row {
     display: flex;
     align-items: center;

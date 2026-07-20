@@ -1,5 +1,3 @@
-// js/timeline.js
-
 import { dbClient, state } from './config.js';
 import { setActiveDrawer } from './auth.js';
 
@@ -63,7 +61,8 @@ export async function fetchTimelineTweets() {
 
         // Render targets 2 & 3: Segments current user profile assets across drawers
         if (state.currentUser) {
-            const myPosts = masterFeedArray.filter(post => post.user_id === state.currentUser.id);
+            const currentUserId = state.currentUser?.id || state.currentUser?.user?.id;
+            const myPosts = masterFeedArray.filter(post => String(post.user_id) === String(currentUserId));
             
             if (document.getElementById('myPostsFeed')) {
                 await renderFeedLayout(myPosts, 'myPostsFeed');
@@ -118,6 +117,9 @@ async function renderFeedLayout(postsArray, containerId) {
         console.error("Error batch fetching comments:", err);
     }
 
+    // Identify active logged-in user ID safely
+    const currentUserId = state.currentUser?.id || state.currentUser?.user?.id;
+
     for (let post of postsArray) {
         const card = document.createElement('div');
         card.className = "tweet-card";
@@ -126,8 +128,21 @@ async function renderFeedLayout(postsArray, containerId) {
         const downvotes = post.downvotes || 0;
         const commentsList = masterCommentsMap[post.id] || [];
 
+        // Check ownership as string to avoid ID type mismatch issues (UUID vs String)
+        const isOwner = Boolean(currentUserId && String(currentUserId) === String(post.user_id));
+
         card.innerHTML = `
-            <div class="tweet-header">@${post.username} <span>${new Date(post.created_at).toLocaleDateString()}</span></div>
+            <div class="tweet-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>@${post.username}</strong> 
+                    <span style="font-size: 0.8em; color: #888;">${new Date(post.created_at).toLocaleDateString()}</span>
+                </div>
+                ${isOwner ? `
+                    <button class="delete-post-btn" data-id="${post.id}" style="background: transparent; border: none; cursor: pointer; font-size: 16px;" title="Delete Post">
+                        🗑️
+                    </button>
+                ` : ''}
+            </div>
             <div class="tweet-body">${post.content}</div>
             <div class="tweet-actions">
                 <div class="action-btn" data-id="${post.id}" data-action="up">🔺 <span>${upvotes}</span></div>
@@ -146,6 +161,7 @@ async function renderFeedLayout(postsArray, containerId) {
             </div>
         `;
 
+        // Action listeners
         card.querySelectorAll('.action-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const act = btn.getAttribute('data-action');
@@ -158,6 +174,15 @@ async function renderFeedLayout(postsArray, containerId) {
             });
         });
 
+        // Delete post listener
+        const deleteBtn = card.querySelector('.delete-post-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deletePost(post.id);
+            });
+        }
+
         const replyBtn = card.querySelector('.reply-submit-btn');
         if (replyBtn) {
             replyBtn.addEventListener('click', () => submitComment(post.id, containerId));
@@ -167,9 +192,30 @@ async function renderFeedLayout(postsArray, containerId) {
     }
 }
 
+export async function deletePost(postId) {
+    if (!confirm("Are you sure you want to delete this post?")) return;
+
+    try {
+        // Delete related comments first (if foreign keys do not cascade delete)
+        await dbClient.from('comments').delete().eq('post_id', postId);
+
+        // Delete post entry
+        const { error } = await dbClient
+            .from('posts')
+            .delete()
+            .eq('id', postId);
+
+        if (error) throw error;
+
+        // Re-render timeline
+        await fetchTimelineTweets();
+    } catch (error) {
+        console.error("Error deleting post:", error);
+        alert("Could not delete post: " + error.message);
+    }
+}
+
 async function vote(postId, type) {
-    // FIX: Optimized increment using Supabase increment operation
-    // Ensure you have an 'increment_vote' function in your DB or handle via explicit update
     const { data: post } = await dbClient.from('posts').select(type === 'up' ? 'upvotes' : 'downvotes').eq('id', postId).single();
     const currentVal = post ? (post[type === 'up' ? 'upvotes' : 'downvotes'] || 0) : 0;
     

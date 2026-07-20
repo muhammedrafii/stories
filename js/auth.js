@@ -19,6 +19,12 @@ export function initApplicationEngine() {
     document.getElementById('registerBtn').addEventListener('click', handleSignUp);
     document.getElementById('logoutBtn').addEventListener('click', handleLogout);
 
+    // Header Notification Button Listener
+    const notifBtn = document.getElementById('navNotificationsBtn');
+    if (notifBtn) {
+        notifBtn.addEventListener('click', () => setActiveDrawer('notifications'));
+    }
+
     // Bottom Navigation Router Click Listeners
     document.getElementById('navSearch').addEventListener('click', () => setActiveDrawer('search'));
     document.getElementById('navPost').addEventListener('click', () => setActiveDrawer('post'));
@@ -51,7 +57,7 @@ export function initApplicationEngine() {
 }
 
 export function setActiveDrawer(panel) {
-    const panels = ['search', 'post', 'chat', 'profile'];
+    const panels = ['search', 'post', 'chat', 'profile', 'notifications'];
     
     const targetEl = document.getElementById(`${panel}Drawer`);
     if (!targetEl) return;
@@ -89,6 +95,13 @@ export function setActiveDrawer(panel) {
         }
 
         // Module initializers
+        if (panel === 'notifications') {
+            const unreadBadge = document.getElementById('unreadBadge');
+            if (unreadBadge) {
+                unreadBadge.innerText = '0';
+                unreadBadge.classList.add('hidden');
+            }
+        }
         if (panel === 'chat') {
             const badge = document.getElementById('chatNotificationCount');
             if (badge) badge.classList.add('hidden');

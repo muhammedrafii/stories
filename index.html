@@ -30,9 +30,17 @@
 
     <!-- MAIN APP SCREEN CONTAINER -->
     <div id="appSection" class="app-container hidden">
-        <div class="app-header">
-            <h3 id="welcomeMsg">@username</h3>
-            <button id="logoutBtn" style="background:none; border:none; color:#ef4444; font-weight:600; cursor:pointer; padding: 8px;">Log Out</button>
+        <div class="app-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+            <h3 id="welcomeMsg" style="margin: 0;">@username</h3>
+            
+            <!-- TOP RIGHT HEADER ACTIONS -->
+            <div class="top-actions" style="display: flex; align-items: center; gap: 8px;">
+                <button id="navNotificationsBtn" class="icon-btn" title="Notifications" style="position: relative; background: none; border: none; font-size: 20px; cursor: pointer; padding: 6px 10px;">
+                    🔔
+                    <span id="unreadBadge" class="badge hidden" style="position: absolute; top: 0; right: 2px; background: #ef4444; color: #fff; font-size: 10px; font-weight: bold; border-radius: 50%; padding: 2px 6px;">0</span>
+                </button>
+                <button id="logoutBtn" style="background:none; border:none; color:#ef4444; font-weight:600; cursor:pointer; padding: 8px;">Log Out</button>
+            </div>
         </div>
 
         <div class="app-content">
@@ -129,6 +137,14 @@
                 <div id="myPostsFeed"></div>
             </div>
 
+            <!-- POSITION 5 DRAWER: NOTIFICATION FEED -->
+            <div id="notificationsDrawer" class="drawer-box hidden" style="background: #ffffff; color: #000000; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px;">
+                <h5 style="color: var(--accent); margin-bottom: 15px;">Notifications</h5>
+                <div id="notificationsList" style="display: flex; flex-direction: column; gap: 10px;">
+                    <p style="font-size: 13px; color: var(--secondary-text);">No new notifications.</p>
+                </div>
+            </div>
+
             <!-- GLOBAL INTERACTION FEED TIMELINE -->
             <div id="homeTimelineWrapper">
                 <h4 style="margin: 15px 0 10px 0; border-bottom: 2px solid #eee; padding-bottom: 6px; font-size: 16px;">Global Stream</h4>
@@ -137,7 +153,7 @@
 
             <!-- EXPIRED HIGHLIGHTS ARCHIVE -->
             <div id="highlightsArchiveWrapper">
-                <h4 style="margin: 30px 0 10px 0; font-size: 13px; color: var(--secondary-text);">Past Highlights (>24h)</h4>
+                <h4 style="margin: 30px 0 10px 0; font-size: 13px; color: var(--secondary-text);">Past Highlights (&gt;24h)</h4>
                 <div class="story-tray" id="highlightsTray"></div>
             </div>
         </div>

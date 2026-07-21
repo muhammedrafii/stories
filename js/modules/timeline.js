@@ -2,6 +2,7 @@ import { dbClient, state } from '../config.js';
 import { setActiveDrawer } from '../auth.js';
 
 let masterFeedArray = [];
+let timelineSubscription = null; // Track subscription to prevent multiple bindings
 
 export function setupTimelineListeners() {
     const submitBtn = document.getElementById('submitTweetBtn');
@@ -16,6 +17,28 @@ export function setupTimelineListeners() {
         searchInput.removeEventListener('input', filterGlobalFeed);
         searchInput.addEventListener('input', filterGlobalFeed);
     }
+
+    // Initialize Supabase Realtime listeners for the timeline
+    setupRealtimeFeedListeners();
+}
+
+function setupRealtimeFeedListeners() {
+    if (timelineSubscription) return; // Prevent duplicate subscriptions
+
+    timelineSubscription = dbClient
+        .channel('public-timeline-channel')
+        // Listen to changes on the 'posts' table
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+            fetchTimelineTweets();
+        })
+        // NOTE: post_votes is intentionally removed from here to prevent full-page refreshes 
+        // when you or anyone else clicks like/dislike. Granular updates handle vote UI changes instantly.
+        
+        // Listen to changes on the 'comments' table so comment sections update live
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+            fetchTimelineTweets();
+        })
+        .subscribe();
 }
 
 export async function postTweet(e) {
@@ -128,6 +151,7 @@ async function renderFeedLayout(postsArray, containerId) {
     for (let post of postsArray) {
         const card = document.createElement('div');
         card.className = "tweet-card";
+        card.setAttribute('data-post-id', post.id);
         
         const votesData = masterVotesMap[post.id] || { up: [], down: [] };
         const upvotes = votesData.up.length;
@@ -138,12 +162,13 @@ async function renderFeedLayout(postsArray, containerId) {
         const hasUpvoted = Boolean(currentUserId && votesData.up.includes(currentUserId));
         const hasDownvoted = Boolean(currentUserId && votesData.down.includes(currentUserId));
 
-        // Determine small indicator text to show under the post based on user vote status
         let voteIndicatorHTML = '';
         if (hasUpvoted) {
-            voteIndicatorHTML = `<div style="font-size: 0.75em; color: #3b82f6; margin-top: 4px;">You liked this post</div>`;
+            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #3b82f6; margin-top: 4px;">You liked this post</div>`;
         } else if (hasDownvoted) {
-            voteIndicatorHTML = `<div style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You disliked this post</div>`;
+            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You disliked this post</div>`;
+        } else {
+            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px; display: none;"></div>`;
         }
 
         card.innerHTML = `
@@ -153,15 +178,15 @@ async function renderFeedLayout(postsArray, containerId) {
                     <span style="font-size: 0.8em; color: #888;">${new Date(post.created_at).toLocaleDateString()}</span>
                 </div>
                 ${isOwner ? `
-                    <button class="delete-post-btn" data-id="${post.id}" style="background: transparent; border: none; cursor: pointer; font-size: 16px;" title="Delete Post">
+                    <button type="button" class="delete-post-btn" data-id="${post.id}" style="background: transparent; border: none; cursor: pointer; font-size: 16px;" title="Delete Post">
                         🗑️
                     </button>
                 ` : ''}
             </div>
             <div class="tweet-body">${post.content}</div>
             <div class="tweet-actions">
-                <button type="button" class="action-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer; color:${hasUpvoted ? '#3b82f6' : 'inherit'};">🔺 <span class="vote-count">${upvotes}</span></button>
-                <button type="button" class="action-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer; color:${hasDownvoted ? '#ef4444' : 'inherit'};">🔻 <span class="vote-count">${downvotes}</span></button>
+                <button type="button" class="action-btn upvote-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer; color:${hasUpvoted ? '#3b82f6' : 'inherit'};">🔺 <span class="vote-count upvote-count">${upvotes}</span></button>
+                <button type="button" class="action-btn downvote-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer; color:${hasDownvoted ? '#ef4444' : 'inherit'};">🔻 <span class="vote-count downvote-count">${downvotes}</span></button>
                 <button type="button" class="action-btn" data-id="${post.id}" data-action="comment-toggle" style="background:none; border:none; cursor:pointer;">💬 <span class="comment-count">${commentsList.length}</span></button>
             </div>
             ${voteIndicatorHTML}
@@ -181,7 +206,7 @@ async function renderFeedLayout(postsArray, containerId) {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const act = btn.getAttribute('data-action');
-                if (act === 'up' || act === 'down') handleVote(post.id, act);
+                if (act === 'up' || act === 'down') handleVote(post.id, act, card);
                 if (act === 'comment-toggle') {
                     const box = document.getElementById(`commentBox-${containerId}-${post.id}`);
                     if (box) box.classList.toggle('hidden');
@@ -210,7 +235,7 @@ async function renderFeedLayout(postsArray, containerId) {
     }
 }
 
-async function handleVote(postId, voteType) {
+async function handleVote(postId, voteType, cardElement) {
     if (!state.currentUser || !state.currentProfile) {
         alert("You must be logged in to vote.");
         return;
@@ -229,26 +254,26 @@ async function handleVote(postId, voteType) {
 
         if (fetchErr) throw fetchErr;
 
+        let actionTaken = ''; // 'added', 'removed', or 'switched'
         if (existingVote) {
             if (existingVote.vote_type === voteType) {
-                // If user clicks the exact same button they already voted with, toggle it off (remove vote)
                 const { error: deleteErr } = await dbClient
                     .from('post_votes')
                     .delete()
                     .eq('post_id', postId)
                     .eq('user_id', userId);
                 if (deleteErr) throw deleteErr;
+                actionTaken = 'removed';
             } else {
-                // If user switches from like to dislike or vice versa, update the existing vote row
                 const { error: updateErr } = await dbClient
                     .from('post_votes')
                     .update({ vote_type: voteType })
                     .eq('post_id', postId)
                     .eq('user_id', userId);
                 if (updateErr) throw updateErr;
+                actionTaken = 'switched';
             }
         } else {
-            // First time voting on this post: Insert new record ensuring exclusivity (one vote per user per post)
             const { error: insertErr } = await dbClient
                 .from('post_votes')
                 .insert([{
@@ -258,9 +283,9 @@ async function handleVote(postId, voteType) {
                     vote_type: voteType
                 }]);
             if (insertErr) throw insertErr;
+            actionTaken = 'added';
         }
 
-        // Recalculate upvotes and downvotes accurately
         const { data: allVotes, error: countErr } = await dbClient
             .from('post_votes')
             .select('vote_type')
@@ -278,7 +303,42 @@ async function handleVote(postId, voteType) {
 
         if (postUpdateErr) throw postUpdateErr;
 
-        await fetchTimelineTweets();
+        // --- GRANULAR DOM UPDATE (No full page/timeline refetch) ---
+        if (cardElement) {
+            const upBtn = cardElement.querySelector('.upvote-btn');
+            const downBtn = cardElement.querySelector('.downvote-btn');
+            const upCountSpan = cardElement.querySelector('.upvote-count');
+            const downCountSpan = cardElement.querySelector('.downvote-count');
+            const indicator = cardElement.querySelector('.vote-indicator');
+
+            if (upCountSpan) upCountSpan.textContent = upCount;
+            if (downCountSpan) downCountSpan.textContent = downCount;
+
+            if (upBtn) upBtn.style.color = 'inherit';
+            if (downBtn) downBtn.style.color = 'inherit';
+
+            if (actionTaken === 'added' || actionTaken === 'switched') {
+                if (voteType === 'up') {
+                    if (upBtn) upBtn.style.color = '#3b82f6';
+                    if (indicator) {
+                        indicator.textContent = 'You liked this post';
+                        indicator.style.color = '#3b82f6';
+                        indicator.style.display = 'block';
+                    }
+                } else {
+                    if (downBtn) downBtn.style.color = '#ef4444';
+                    if (indicator) {
+                        indicator.textContent = 'You disliked this post';
+                        indicator.style.color = '#ef4444';
+                        indicator.style.display = 'block';
+                    }
+                }
+            } else if (actionTaken === 'removed') {
+                if (indicator) {
+                    indicator.style.display = 'none';
+                }
+            }
+        }
     } catch (err) {
         console.error("Error processing vote:", err);
         alert("Could not process vote: " + (err.message || JSON.stringify(err)));

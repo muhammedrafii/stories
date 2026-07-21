@@ -4,6 +4,8 @@ import { fetchTimelineTweets, setupTimelineListeners } from './modules/timeline.
 import { runSystemSyncEngine, setupChatListeners, checkChatNotificationsAndHistory } from './modules/chat.js';
 import { setupProfileListeners, renderProfileDrawerData } from './modules/profile.js';
 import { setupSearchListeners } from './modules/search.js';
+// 1. Import your notifications functions
+import { fetchNotifications, setupNotificationListeners } from './modules/notifications.js';
 
 let systemLoopInterval = null;
 
@@ -30,7 +32,10 @@ export function initApplicationEngine() {
 
     const notifBtn = document.getElementById('navNotificationsBtn');
     if (notifBtn) {
-        notifBtn.addEventListener('click', () => setActiveDrawer('notifications'));
+        notifBtn.addEventListener('click', async () => {
+            setActiveDrawer('notifications');
+            await fetchNotifications(); // 2. Fetch notifications when user clicks the bell icon
+        });
     }
 
     const navSearch = document.getElementById('navSearch');
@@ -56,6 +61,7 @@ export function initApplicationEngine() {
     setupChatListeners();
     setupProfileListeners();
     setupSearchListeners();
+    setupNotificationListeners(); // 3. Initialize notification real-time listeners on startup
 
     dbClient.auth.onAuthStateChange((event, session) => {
         if (session) {
@@ -283,6 +289,7 @@ async function loadProfileAndApp(user) {
     
     fetchGlobalStories();
     fetchTimelineTweets();
+    fetchNotifications(); // 4. Fetch initial notifications payload upon login session start
 
     runSystemSyncEngine();
     clearInterval(systemLoopInterval);

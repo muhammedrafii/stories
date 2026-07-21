@@ -2,8 +2,31 @@
 
 import { dbClient, state } from '../config.js';
 
+let notificationSubscription = null;
+
 export function setupNotificationListeners() {
-    // Register real-time updates or click triggers if needed
+    if (!state.currentUser) return;
+
+    if (notificationSubscription) {
+        dbClient.removeChannel(notificationSubscription);
+    }
+
+    // Set up real-time subscription for new notifications inserted into the database
+    notificationSubscription = dbClient
+        .channel('user-notifications-channel')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'notifications',
+                filter: `user_id=eq.${state.currentUser.id}`
+            },
+            async () => {
+                await fetchNotifications();
+            }
+        )
+        .subscribe();
 }
 
 export async function fetchNotifications() {
@@ -13,7 +36,7 @@ export async function fetchNotifications() {
     const badgeEl = document.getElementById('unreadBadge');
 
     try {
-        // Example query targeting a 'notifications' table in Supabase
+        // Query the notifications table to fetch activities (such as likes and dislikes on your posts)[cite: 6]
         const { data: notifications, error } = await dbClient
             .from('notifications')
             .select('*')
@@ -26,22 +49,22 @@ export async function fetchNotifications() {
         }
 
         if (!notifications || notifications.length === 0) {
-            if (notifListEl) notifListEl.innerHTML = `<li class="empty-state">No notifications yet.</li>`;
+            if (notifListEl) notifListEl.innerHTML = `<li class="empty-state" style="font-size: 13px; color: var(--secondary-text);">No notifications yet.</li>`;
             if (badgeEl) badgeEl.classList.add('hidden');
             return;
         }
 
-        // Render notifications
+        // Render notifications showing who liked or disliked your posts[cite: 6]
         if (notifListEl) {
             notifListEl.innerHTML = notifications.map(notif => `
-                <li class="notification-item ${notif.is_read ? 'read' : 'unread'}">
-                    <p class="notif-text">${notif.message || 'New notification'}</p>
-                    <span class="notif-date">${new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <li class="notification-item ${notif.is_read ? 'read' : 'unread'}" style="padding: 10px; border-bottom: 1px solid #f0f0f0; background: ${notif.is_read ? '#fff' : '#f9f9f9'};">
+                    <p class="notif-text" style="margin: 0 0 4px 0; font-size: 14px; color: #000;">${notif.message || 'New notification'}</p>
+                    <span class="notif-date" style="font-size: 11px; color: #888;">${new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </li>
             `).join('');
         }
 
-        // Update badge count for unread notifications
+        // Update unread badge count[cite: 6]
         const unreadCount = notifications.filter(n => !n.is_read).length;
         if (badgeEl) {
             if (unreadCount > 0) {

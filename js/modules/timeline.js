@@ -1,8 +1,10 @@
+// js/modules/timeline.js
+import { fetchNotifications } from './notifications.js';
 import { dbClient, state } from '../config.js';
 import { setActiveDrawer } from '../auth.js';
 
 let masterFeedArray = [];
-let timelineSubscription = null; // Track subscription to prevent multiple bindings
+let timelineSubscription = null;
 
 export function setupTimelineListeners() {
     const submitBtn = document.getElementById('submitTweetBtn');
@@ -18,23 +20,17 @@ export function setupTimelineListeners() {
         searchInput.addEventListener('input', filterGlobalFeed);
     }
 
-    // Initialize Supabase Realtime listeners for the timeline
     setupRealtimeFeedListeners();
 }
 
 function setupRealtimeFeedListeners() {
-    if (timelineSubscription) return; // Prevent duplicate subscriptions
+    if (timelineSubscription) return;
 
     timelineSubscription = dbClient
         .channel('public-timeline-channel')
-        // Listen to changes on the 'posts' table
         .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
             fetchTimelineTweets();
         })
-        // NOTE: post_votes is intentionally removed from here to prevent full-page refreshes 
-        // when you or anyone else clicks like/dislike. Granular updates handle vote UI changes instantly.
-        
-        // Listen to changes on the 'comments' table so comment sections update live
         .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
             fetchTimelineTweets();
         })
@@ -155,20 +151,16 @@ async function renderFeedLayout(postsArray, containerId) {
         
         const votesData = masterVotesMap[post.id] || { up: [], down: [] };
         const upvotes = votesData.up.length;
-        const downvotes = votesData.down.length;
         const commentsList = masterCommentsMap[post.id] || [];
 
         const isOwner = Boolean(currentUserId && String(currentUserId) === String(post.user_id));
-        const hasUpvoted = Boolean(currentUserId && votesData.up.includes(currentUserId));
-        const hasDownvoted = Boolean(currentUserId && votesData.down.includes(currentUserId));
+        const hasLiked = Boolean(currentUserId && votesData.up.includes(currentUserId));
 
-        let voteIndicatorHTML = '';
-        if (hasUpvoted) {
-            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #3b82f6; margin-top: 4px;">You liked this post</div>`;
-        } else if (hasDownvoted) {
-            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You disliked this post</div>`;
+        let likeIndicatorHTML = '';
+        if (hasLiked) {
+            likeIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You liked this post</div>`;
         } else {
-            voteIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px; display: none;"></div>`;
+            likeIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px; display: none;"></div>`;
         }
 
         card.innerHTML = `
@@ -185,11 +177,10 @@ async function renderFeedLayout(postsArray, containerId) {
             </div>
             <div class="tweet-body">${post.content}</div>
             <div class="tweet-actions">
-                <button type="button" class="action-btn upvote-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer; color:${hasUpvoted ? '#3b82f6' : 'inherit'};">🔺 <span class="vote-count upvote-count">${upvotes}</span></button>
-                <button type="button" class="action-btn downvote-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer; color:${hasDownvoted ? '#ef4444' : 'inherit'};">🔻 <span class="vote-count downvote-count">${downvotes}</span></button>
+                <button type="button" class="action-btn like-btn" data-id="${post.id}" data-action="like" style="background:none; border:none; cursor:pointer; color:${hasLiked ? '#ef4444' : 'inherit'};">❤️ <span class="vote-count like-count">${upvotes}</span></button>
                 <button type="button" class="action-btn" data-id="${post.id}" data-action="comment-toggle" style="background:none; border:none; cursor:pointer;">💬 <span class="comment-count">${commentsList.length}</span></button>
             </div>
-            ${voteIndicatorHTML}
+            ${likeIndicatorHTML}
             
             <div id="commentBox-${containerId}-${post.id}" class="comment-drawer hidden">
                 <div id="commentList-${containerId}-${post.id}">
@@ -206,7 +197,7 @@ async function renderFeedLayout(postsArray, containerId) {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const act = btn.getAttribute('data-action');
-                if (act === 'up' || act === 'down') handleVote(post.id, act, card);
+                if (act === 'like') handleLike(post.id, card, post.user_id);
                 if (act === 'comment-toggle') {
                     const box = document.getElementById(`commentBox-${containerId}-${post.id}`);
                     if (box) box.classList.toggle('hidden');
@@ -235,9 +226,9 @@ async function renderFeedLayout(postsArray, containerId) {
     }
 }
 
-async function handleVote(postId, voteType, cardElement) {
+async function handleLike(postId, cardElement, postOwnerId) {
     if (!state.currentUser || !state.currentProfile) {
-        alert("You must be logged in to vote.");
+        alert("Login required");
         return;
     }
 
@@ -245,103 +236,81 @@ async function handleVote(postId, voteType, cardElement) {
     const username = state.currentProfile.username;
 
     try {
-        const { data: existingVote, error: fetchErr } = await dbClient
+        // 1. Check if user already liked this post
+        const { data: existingVote } = await dbClient
             .from('post_votes')
             .select('*')
             .eq('post_id', postId)
             .eq('user_id', userId)
+            .eq('vote_type', 'up')
             .maybeSingle();
 
-        if (fetchErr) throw fetchErr;
-
-        let actionTaken = ''; // 'added', 'removed', or 'switched'
         if (existingVote) {
-            if (existingVote.vote_type === voteType) {
-                const { error: deleteErr } = await dbClient
-                    .from('post_votes')
+            // UN-LIKE LOGIC: Remove vote and completely wipe out the corresponding notification
+            await dbClient
+                .from('post_votes')
+                .delete()
+                .eq('post_id', postId)
+                .eq('user_id', userId)
+                .eq('vote_type', 'up');
+
+            if (postOwnerId && postOwnerId !== userId) {
+                await dbClient
+                    .from('notifications')
                     .delete()
                     .eq('post_id', postId)
-                    .eq('user_id', userId);
-                if (deleteErr) throw deleteErr;
-                actionTaken = 'removed';
-            } else {
-                const { error: updateErr } = await dbClient
-                    .from('post_votes')
-                    .update({ vote_type: voteType })
-                    .eq('post_id', postId)
-                    .eq('user_id', userId);
-                if (updateErr) throw updateErr;
-                actionTaken = 'switched';
+                    .eq('user_id', postOwnerId)
+                    .eq('voter_id', userId);
             }
         } else {
-            const { error: insertErr } = await dbClient
-                .from('post_votes')
-                .insert([{
+            // LIKE LOGIC: Add vote, wipe any existing stale notification first, then create a new notification
+            await dbClient.from('post_votes').insert([{
+                post_id: postId,
+                user_id: userId,
+                username,
+                vote_type: 'up'
+            }]);
+
+            if (postOwnerId && postOwnerId !== userId) {
+                // Ensure no duplicate notification accumulation
+                await dbClient
+                    .from('notifications')
+                    .delete()
+                    .eq('post_id', postId)
+                    .eq('user_id', postOwnerId)
+                    .eq('voter_id', userId);
+
+                const message = `@${username} liked your post`;
+                await dbClient.from('notifications').insert([{
+                    user_id: postOwnerId,
+                    voter_id: userId,
                     post_id: postId,
-                    user_id: userId,
-                    username: username,
-                    vote_type: voteType
+                    message,
+                    is_read: false
                 }]);
-            if (insertErr) throw insertErr;
-            actionTaken = 'added';
-        }
-
-        const { data: allVotes, error: countErr } = await dbClient
-            .from('post_votes')
-            .select('vote_type')
-            .eq('post_id', postId);
-
-        if (countErr) throw countErr;
-
-        const upCount = (allVotes || []).filter(v => v.vote_type === 'up').length;
-        const downCount = (allVotes || []).filter(v => v.vote_type === 'down').length;
-
-        const { error: postUpdateErr } = await dbClient
-            .from('posts')
-            .update({ upvotes: upCount, downvotes: downCount })
-            .eq('id', postId);
-
-        if (postUpdateErr) throw postUpdateErr;
-
-        // --- GRANULAR DOM UPDATE (No full page/timeline refetch) ---
-        if (cardElement) {
-            const upBtn = cardElement.querySelector('.upvote-btn');
-            const downBtn = cardElement.querySelector('.downvote-btn');
-            const upCountSpan = cardElement.querySelector('.upvote-count');
-            const downCountSpan = cardElement.querySelector('.downvote-count');
-            const indicator = cardElement.querySelector('.vote-indicator');
-
-            if (upCountSpan) upCountSpan.textContent = upCount;
-            if (downCountSpan) downCountSpan.textContent = downCount;
-
-            if (upBtn) upBtn.style.color = 'inherit';
-            if (downBtn) downBtn.style.color = 'inherit';
-
-            if (actionTaken === 'added' || actionTaken === 'switched') {
-                if (voteType === 'up') {
-                    if (upBtn) upBtn.style.color = '#3b82f6';
-                    if (indicator) {
-                        indicator.textContent = 'You liked this post';
-                        indicator.style.color = '#3b82f6';
-                        indicator.style.display = 'block';
-                    }
-                } else {
-                    if (downBtn) downBtn.style.color = '#ef4444';
-                    if (indicator) {
-                        indicator.textContent = 'You disliked this post';
-                        indicator.style.color = '#ef4444';
-                        indicator.style.display = 'block';
-                    }
-                }
-            } else if (actionTaken === 'removed') {
-                if (indicator) {
-                    indicator.style.display = 'none';
-                }
             }
         }
+
+        // 2. Recalculate total likes count for the post
+        const { data: allVotes } = await dbClient
+            .from('post_votes')
+            .select('vote_type')
+            .eq('post_id', postId)
+            .eq('vote_type', 'up');
+
+        const upvotesCount = (allVotes || []).length;
+
+        await dbClient
+            .from('posts')
+            .update({ upvotes: upvotesCount, downvotes: 0 })
+            .eq('id', postId);
+
+        // 3. Refresh UI notifications and feed layout
+        await fetchNotifications();
+        await fetchTimelineTweets();
+
     } catch (err) {
-        console.error("Error processing vote:", err);
-        alert("Could not process vote: " + (err.message || JSON.stringify(err)));
+        console.error("Like toggle error:", err);
     }
 }
 
@@ -351,6 +320,7 @@ export async function deletePost(postId) {
     try {
         await dbClient.from('comments').delete().eq('post_id', postId);
         await dbClient.from('post_votes').delete().eq('post_id', postId);
+        await dbClient.from('notifications').delete().eq('post_id', postId);
 
         const { error } = await dbClient.from('posts').delete().eq('id', postId);
         if (error) throw error;

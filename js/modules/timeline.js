@@ -19,7 +19,7 @@ export function setupTimelineListeners() {
 }
 
 export async function postTweet(e) {
-    if (e) e.preventDefault(); // Stop any default form reload
+    if (e) e.preventDefault();
     
     const input = document.getElementById('tweetText');
     if (!input) return;
@@ -58,10 +58,8 @@ export async function fetchTimelineTweets() {
 
         masterFeedArray = posts || [];
         
-        // Render target 1: Global public dashboard feed
         await renderFeedLayout(masterFeedArray, 'timelineFeed');
 
-        // Render targets 2 & 3: Segments current user profile assets across drawers
         if (state.currentUser) {
             const currentUserId = state.currentUser?.id || state.currentUser?.user?.id;
             const myPosts = masterFeedArray.filter(post => String(post.user_id) === String(currentUserId));
@@ -99,39 +97,54 @@ async function renderFeedLayout(postsArray, containerId) {
 
     const postIds = postsArray.map(p => p.id);
     let masterCommentsMap = {};
+    let masterVotesMap = {};
     
     try {
-        const { data: allComments } = await dbClient
-            .from('comments')
-            .select('*')
-            .in('post_id', postIds)
-            .order('created_at', { ascending: true });
+        const [commentsRes, votesRes] = await Promise.all([
+            dbClient.from('comments').select('*').in('post_id', postIds).order('created_at', { ascending: true }),
+            dbClient.from('post_votes').select('*').in('post_id', postIds)
+        ]);
             
-        if (allComments) {
-            allComments.forEach(comment => {
-                if (!masterCommentsMap[comment.post_id]) {
-                    masterCommentsMap[comment.post_id] = [];
-                }
+        if (commentsRes.data) {
+            commentsRes.data.forEach(comment => {
+                if (!masterCommentsMap[comment.post_id]) masterCommentsMap[comment.post_id] = [];
                 masterCommentsMap[comment.post_id].push(comment);
             });
         }
+
+        if (votesRes.data) {
+            votesRes.data.forEach(vote => {
+                if (!masterVotesMap[vote.post_id]) masterVotesMap[vote.post_id] = { up: [], down: [] };
+                if (vote.vote_type === 'up') masterVotesMap[vote.post_id].up.push(vote.user_id);
+                if (vote.vote_type === 'down') masterVotesMap[vote.post_id].down.push(vote.user_id);
+            });
+        }
     } catch (err) {
-        console.error("Error batch fetching comments:", err);
+        console.error("Error batch fetching relations:", err);
     }
 
-    // Identify active logged-in user ID safely
     const currentUserId = state.currentUser?.id || state.currentUser?.user?.id;
 
     for (let post of postsArray) {
         const card = document.createElement('div');
         card.className = "tweet-card";
         
-        const upvotes = post.upvotes || 0;
-        const downvotes = post.downvotes || 0;
+        const votesData = masterVotesMap[post.id] || { up: [], down: [] };
+        const upvotes = votesData.up.length;
+        const downvotes = votesData.down.length;
         const commentsList = masterCommentsMap[post.id] || [];
 
-        // Check ownership as string to avoid ID type mismatch issues (UUID vs String)
         const isOwner = Boolean(currentUserId && String(currentUserId) === String(post.user_id));
+        const hasUpvoted = Boolean(currentUserId && votesData.up.includes(currentUserId));
+        const hasDownvoted = Boolean(currentUserId && votesData.down.includes(currentUserId));
+
+        // Determine small indicator text to show under the post based on user vote status
+        let voteIndicatorHTML = '';
+        if (hasUpvoted) {
+            voteIndicatorHTML = `<div style="font-size: 0.75em; color: #3b82f6; margin-top: 4px;">You liked this post</div>`;
+        } else if (hasDownvoted) {
+            voteIndicatorHTML = `<div style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You disliked this post</div>`;
+        }
 
         card.innerHTML = `
             <div class="tweet-header" style="display: flex; justify-content: space-between; align-items: center;">
@@ -147,10 +160,11 @@ async function renderFeedLayout(postsArray, containerId) {
             </div>
             <div class="tweet-body">${post.content}</div>
             <div class="tweet-actions">
-                <button type="button" class="action-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer;">🔺 <span class="vote-count">${upvotes}</span></button>
-                <button type="button" class="action-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer;">🔻 <span class="vote-count">${downvotes}</span></button>
+                <button type="button" class="action-btn" data-id="${post.id}" data-action="up" style="background:none; border:none; cursor:pointer; color:${hasUpvoted ? '#3b82f6' : 'inherit'};">🔺 <span class="vote-count">${upvotes}</span></button>
+                <button type="button" class="action-btn" data-id="${post.id}" data-action="down" style="background:none; border:none; cursor:pointer; color:${hasDownvoted ? '#ef4444' : 'inherit'};">🔻 <span class="vote-count">${downvotes}</span></button>
                 <button type="button" class="action-btn" data-id="${post.id}" data-action="comment-toggle" style="background:none; border:none; cursor:pointer;">💬 <span class="comment-count">${commentsList.length}</span></button>
             </div>
+            ${voteIndicatorHTML}
             
             <div id="commentBox-${containerId}-${post.id}" class="comment-drawer hidden">
                 <div id="commentList-${containerId}-${post.id}">
@@ -163,12 +177,11 @@ async function renderFeedLayout(postsArray, containerId) {
             </div>
         `;
 
-        // Action listeners
         card.querySelectorAll('.action-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                e.preventDefault(); // Stop default button action / page refresh
+                e.preventDefault();
                 const act = btn.getAttribute('data-action');
-                if (act === 'up' || act === 'down') vote(e, post.id, act, btn);
+                if (act === 'up' || act === 'down') handleVote(post.id, act);
                 if (act === 'comment-toggle') {
                     const box = document.getElementById(`commentBox-${containerId}-${post.id}`);
                     if (box) box.classList.toggle('hidden');
@@ -176,7 +189,6 @@ async function renderFeedLayout(postsArray, containerId) {
             });
         });
 
-        // Delete post listener
         const deleteBtn = card.querySelector('.delete-post-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
@@ -189,7 +201,7 @@ async function renderFeedLayout(postsArray, containerId) {
         const replyBtn = card.querySelector('.reply-submit-btn');
         if (replyBtn) {
             replyBtn.addEventListener('click', (e) => {
-                e.preventDefault(); // Stop form submit page refresh
+                e.preventDefault();
                 submitComment(e, post.id, containerId, card);
             });
         }
@@ -198,46 +210,95 @@ async function renderFeedLayout(postsArray, containerId) {
     }
 }
 
+async function handleVote(postId, voteType) {
+    if (!state.currentUser || !state.currentProfile) {
+        alert("You must be logged in to vote.");
+        return;
+    }
+
+    const userId = state.currentUser.id;
+    const username = state.currentProfile.username;
+
+    try {
+        const { data: existingVote, error: fetchErr } = await dbClient
+            .from('post_votes')
+            .select('*')
+            .eq('post_id', postId)
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+
+        if (existingVote) {
+            if (existingVote.vote_type === voteType) {
+                // If user clicks the exact same button they already voted with, toggle it off (remove vote)
+                const { error: deleteErr } = await dbClient
+                    .from('post_votes')
+                    .delete()
+                    .eq('post_id', postId)
+                    .eq('user_id', userId);
+                if (deleteErr) throw deleteErr;
+            } else {
+                // If user switches from like to dislike or vice versa, update the existing vote row
+                const { error: updateErr } = await dbClient
+                    .from('post_votes')
+                    .update({ vote_type: voteType })
+                    .eq('post_id', postId)
+                    .eq('user_id', userId);
+                if (updateErr) throw updateErr;
+            }
+        } else {
+            // First time voting on this post: Insert new record ensuring exclusivity (one vote per user per post)
+            const { error: insertErr } = await dbClient
+                .from('post_votes')
+                .insert([{
+                    post_id: postId,
+                    user_id: userId,
+                    username: username,
+                    vote_type: voteType
+                }]);
+            if (insertErr) throw insertErr;
+        }
+
+        // Recalculate upvotes and downvotes accurately
+        const { data: allVotes, error: countErr } = await dbClient
+            .from('post_votes')
+            .select('vote_type')
+            .eq('post_id', postId);
+
+        if (countErr) throw countErr;
+
+        const upCount = (allVotes || []).filter(v => v.vote_type === 'up').length;
+        const downCount = (allVotes || []).filter(v => v.vote_type === 'down').length;
+
+        const { error: postUpdateErr } = await dbClient
+            .from('posts')
+            .update({ upvotes: upCount, downvotes: downCount })
+            .eq('id', postId);
+
+        if (postUpdateErr) throw postUpdateErr;
+
+        await fetchTimelineTweets();
+    } catch (err) {
+        console.error("Error processing vote:", err);
+        alert("Could not process vote: " + (err.message || JSON.stringify(err)));
+    }
+}
+
 export async function deletePost(postId) {
     if (!confirm("Are you sure you want to delete this post?")) return;
 
     try {
         await dbClient.from('comments').delete().eq('post_id', postId);
+        await dbClient.from('post_votes').delete().eq('post_id', postId);
 
-        const { error } = await dbClient
-            .from('posts')
-            .delete()
-            .eq('id', postId);
-
+        const { error } = await dbClient.from('posts').delete().eq('id', postId);
         if (error) throw error;
 
         await fetchTimelineTweets();
     } catch (error) {
         console.error("Error deleting post:", error);
         alert("Could not delete post: " + error.message);
-    }
-}
-
-async function vote(e, postId, type, btnElement) {
-    if (e) e.preventDefault();
-
-    // 1. Instantly update UI count in local DOM
-    const countSpan = btnElement.querySelector('.vote-count');
-    if (countSpan) {
-        countSpan.textContent = parseInt(countSpan.textContent || 0) + 1;
-    }
-
-    // 2. Perform DB update in background without calling fetchTimelineTweets()
-    try {
-        const fieldName = type === 'up' ? 'upvotes' : 'downvotes';
-        const { data: post } = await dbClient.from('posts').select(fieldName).eq('id', postId).single();
-        const currentVal = post ? (post[fieldName] || 0) : 0;
-        
-        await dbClient.from('posts').update({ 
-            [fieldName]: currentVal + 1 
-        }).eq('id', postId);
-    } catch (err) {
-        console.error("Error submitting vote:", err);
     }
 }
 
@@ -253,7 +314,6 @@ async function submitComment(e, postId, containerId, cardElement) {
     const currentUsername = state.currentProfile?.username || 'User';
 
     try {
-        // 1. Insert into DB
         const { error } = await dbClient.from('comments').insert([{ 
             post_id: postId, 
             username: currentUsername, 
@@ -262,7 +322,6 @@ async function submitComment(e, postId, containerId, cardElement) {
 
         if (error) throw error;
 
-        // 2. Append new comment directly to DOM (No full page reload/re-render)
         const commentList = document.getElementById(`commentList-${containerId}-${postId}`);
         if (commentList) {
             const newComment = document.createElement('div');
@@ -271,14 +330,12 @@ async function submitComment(e, postId, containerId, cardElement) {
             commentList.appendChild(newComment);
         }
 
-        // 3. Increment comment counter icon dynamically
         const commentCountBtn = cardElement.querySelector('[data-action="comment-toggle"] .comment-count');
         if (commentCountBtn) {
             commentCountBtn.textContent = parseInt(commentCountBtn.textContent || 0) + 1;
         }
 
-        input.value = ''; // Reset input box
-
+        input.value = ''; 
     } catch (err) {
         console.error("Error posting comment:", err);
         alert("Could not post comment: " + err.message);

@@ -86,9 +86,21 @@ export async function fetchTimelineTweets() {
             if (document.getElementById('myPostsFeed')) {
                 await renderFeedLayout(myPosts, 'myPostsFeed');
             }
-            
             if (document.getElementById('myRecentPostsFeed')) {
                 await renderFeedLayout(myPosts, 'myRecentPostsFeed');
+            }
+
+            const { data: myLikes } = await dbClient
+                .from('post_votes')
+                .select('post_id')
+                .eq('user_id', currentUserId)
+                .eq('vote_type', 'up');
+
+            const likedPostIds = (myLikes || []).map(vote => vote.post_id);
+            const likedPosts = masterFeedArray.filter(post => likedPostIds.includes(post.id));
+
+            if (document.getElementById('likedPostsFeed')) {
+                await renderFeedLayout(likedPosts, 'likedPostsFeed');
             }
         }
     } catch (error) {
@@ -112,7 +124,10 @@ async function renderFeedLayout(postsArray, containerId) {
     if (!timeline) return; 
     
     timeline.innerHTML = '';
-    if (postsArray.length === 0) return;
+    if (postsArray.length === 0) {
+        timeline.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">No posts to show here.</div>';
+        return;
+    }
 
     const postIds = postsArray.map(p => p.id);
     let masterCommentsMap = {};
@@ -158,9 +173,7 @@ async function renderFeedLayout(postsArray, containerId) {
 
         let likeIndicatorHTML = '';
         if (hasLiked) {
-            likeIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px;">You liked this post</div>`;
-        } else {
-            likeIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #ef4444; margin-top: 4px; display: none;"></div>`;
+            likeIndicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #0725ad; margin-top: 4px; font-weight: bold;"> You liked this</div>`;
         }
 
         card.innerHTML = `
@@ -197,7 +210,7 @@ async function renderFeedLayout(postsArray, containerId) {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const act = btn.getAttribute('data-action');
-                if (act === 'like') handleLike(post.id, card, post.user_id);
+                if (act === 'like') handleLike(post.id, card, post.user_id, post.content);
                 if (act === 'comment-toggle') {
                     const box = document.getElementById(`commentBox-${containerId}-${post.id}`);
                     if (box) box.classList.toggle('hidden');
@@ -226,7 +239,7 @@ async function renderFeedLayout(postsArray, containerId) {
     }
 }
 
-async function handleLike(postId, cardElement, postOwnerId) {
+async function handleLike(postId, cardElement, postOwnerId, postContent) {
     if (!state.currentUser || !state.currentProfile) {
         alert("Login required");
         return;
@@ -236,7 +249,6 @@ async function handleLike(postId, cardElement, postOwnerId) {
     const username = state.currentProfile.username;
 
     try {
-        // 1. Check if user already liked this post
         const { data: existingVote } = await dbClient
             .from('post_votes')
             .select('*')
@@ -246,7 +258,7 @@ async function handleLike(postId, cardElement, postOwnerId) {
             .maybeSingle();
 
         if (existingVote) {
-            // UN-LIKE LOGIC: Remove vote and completely wipe out the corresponding notification
+            // UN-LIKE LOGIC
             await dbClient
                 .from('post_votes')
                 .delete()
@@ -263,7 +275,7 @@ async function handleLike(postId, cardElement, postOwnerId) {
                     .eq('voter_id', userId);
             }
         } else {
-            // LIKE LOGIC: Add vote, wipe any existing stale notification first, then create a new notification
+            // LIKE LOGIC
             await dbClient.from('post_votes').insert([{
                 post_id: postId,
                 user_id: userId,
@@ -272,7 +284,6 @@ async function handleLike(postId, cardElement, postOwnerId) {
             }]);
 
             if (postOwnerId && postOwnerId !== userId) {
-                // Ensure no duplicate notification accumulation
                 await dbClient
                     .from('notifications')
                     .delete()
@@ -280,7 +291,9 @@ async function handleLike(postId, cardElement, postOwnerId) {
                     .eq('user_id', postOwnerId)
                     .eq('voter_id', userId);
 
-                const message = `@${username} liked your post`;
+                const truncatedContent = postContent.length > 30 ? postContent.substring(0, 30) + '...' : postContent;
+                const message = `@${username} liked your post "${truncatedContent}"`;
+                
                 await dbClient.from('notifications').insert([{
                     user_id: postOwnerId,
                     voter_id: userId,
@@ -291,7 +304,6 @@ async function handleLike(postId, cardElement, postOwnerId) {
             }
         }
 
-        // 2. Recalculate total likes count for the post
         const { data: allVotes } = await dbClient
             .from('post_votes')
             .select('vote_type')
@@ -305,7 +317,6 @@ async function handleLike(postId, cardElement, postOwnerId) {
             .update({ upvotes: upvotesCount, downvotes: 0 })
             .eq('id', postId);
 
-        // 3. Refresh UI notifications and feed layout
         await fetchNotifications();
         await fetchTimelineTweets();
 

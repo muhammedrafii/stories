@@ -1,4 +1,7 @@
+// js/profile.js
+
 import { dbClient, state, updateStateUser } from '../config.js';
+import { fetchGlobalStories } from './stories.js';
 
 let typingTimer; 
 const DEBOUNCE_DELAY = 500; 
@@ -16,6 +19,7 @@ export function setupProfileListeners() {
 }
 
 async function getCurrentUserId() {
+    // FIX: Match config.js property name (state.currentUser instead of state.user)
     if (state && state.currentUser && state.currentUser.id) {
         return state.currentUser.id;
     }
@@ -23,11 +27,13 @@ async function getCurrentUserId() {
     return data?.user?.id || null;
 }
 
+// Hydrates the form fields when the drawer opens
 export async function renderProfileDrawerData() {
     const userId = await getCurrentUserId();
     if (!userId) return;
 
     try {
+        // 1. Explicitly pull fresh data directly from Supabase to bypass any stale local variables
         const { data: profile, error } = await dbClient
             .from('profiles')
             .select('username, display_name, bio')
@@ -38,11 +44,13 @@ export async function renderProfileDrawerData() {
 
         const { data: authData } = await dbClient.auth.getUser();
         
+        // 2. Fallback strictly to empty strings only if the column value is explicitly null
         document.getElementById('profileEmail').value = authData?.user?.email || '';
         document.getElementById('profileDisplayName').value = profile?.display_name || '';
         document.getElementById('profileUsernameInput').value = profile?.username || '';
         document.getElementById('profileBio').value = profile?.bio || '';
         
+        // Reset save button state upon opening
         const saveBtn = document.getElementById('saveProfileBtn');
         if (saveBtn) {
             saveBtn.disabled = false;
@@ -132,6 +140,7 @@ async function handleProfileUpdate() {
     saveBtn.innerText = "Saving changes...";
 
     try {
+        // 1. Update profiles table
         const { error: updateError } = await dbClient
             .from('profiles')
             .update({
@@ -143,6 +152,17 @@ async function handleProfileUpdate() {
 
         if (updateError) throw updateError;
 
+        // 2. Cascade update to stories table so existing records update their static column
+        const { error: storiesError } = await dbClient
+            .from('stories')
+            .update({ username: cleanUsername })
+            .eq('user_id', userId);
+
+        if (storiesError) {
+            console.warn("Could not sync stories username column:", storiesError.message);
+        }
+
+        // 3. Update local state
         if (state && state.currentUser) {
             const updatedProfile = { 
                 username: cleanUsername, 
@@ -152,12 +172,16 @@ async function handleProfileUpdate() {
             updateStateUser(state.currentUser, updatedProfile);
         }
 
+        // 4. Update global header & profile UI labels
         document.getElementById('welcomeMsg').innerText = `@${cleanUsername}`;
         document.getElementById('profileUsername').innerText = `@${cleanUsername}`;
         
         const initialLetters = cleanUsername.substring(0, 2).toUpperCase();
         document.getElementById('navProfileAvatar').innerText = initialLetters;
         document.getElementById('profileDetailAvatar').innerText = initialLetters;
+
+        // 5. Re-fetch and re-render the global stories feed immediately
+        await fetchGlobalStories();
 
         alert("Profile updated successfully!");
         

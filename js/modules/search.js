@@ -1,16 +1,24 @@
+// js/search.js
+
 import { dbClient } from '../config.js';
 import { setViewingOtherProfile } from '../auth.js';
 
+/**
+ * Executes a live query against both handles and display names
+ * @param {string} searchQuery - Raw text string from search input box
+ */
 export async function searchApplicationUsers(searchQuery) {
     const cleanQuery = searchQuery.trim().toLowerCase();
     const resultsContainer = document.getElementById('searchResultsContainer');
     if (!resultsContainer) return;
 
+    // Clear layout if search input is empty
     if (!cleanQuery) {
         resultsContainer.innerHTML = '';
         return;
     }
 
+    // FIX: Select display_name and search against it instead of name to match profile schema
     const { data: users, error } = await dbClient
         .from('profiles')
         .select('id, username, display_name, bio')
@@ -31,11 +39,14 @@ export async function searchApplicationUsers(searchQuery) {
 
     users.forEach(user => {
         const item = document.createElement('div');
+        // Styled to perfectly fit your system's design framework
         item.style.cssText = 'display: flex; align-items: center; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.2s; box-sizing: border-box; width: 100%;';
         
+        // Add smooth interaction states
         item.onmouseenter = () => item.style.background = '#f9f9f9';
         item.onmouseleave = () => item.style.background = 'transparent';
         
+        // FIX: Update variables from user.name to user.display_name
         const userTitle = user.display_name || 'No Name Provided';
         const userHandle = user.username ? `@${user.username}` : '@user';
         const initialLetters = (user.username || 'US').substring(0, 2).toUpperCase();
@@ -50,11 +61,12 @@ export async function searchApplicationUsers(searchQuery) {
             </div>
         `;
 
+        // Interactive Event Hook: Preview external user's records smoothly on interaction click
         item.addEventListener('click', () => {
             setViewingOtherProfile({
                 id: user.id,
                 username: user.username || 'user',
-                name: user.display_name || 'No Name Provided',
+                name: user.display_name || 'No Name Provided', // FIX: Match internal profile expectations
                 bio: user.bio || 'No bio text yet.'
             });
         });
@@ -63,8 +75,11 @@ export async function searchApplicationUsers(searchQuery) {
     });
 }
 
+/**
+ * Attaches structural input listener directly to search text input field element
+ */
 export function setupSearchListeners() {
-    const searchInput = document.getElementById('globalSearchInput');
+    const searchInput = document.getElementById('searchQueryInput');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             searchApplicationUsers(e.target.value);

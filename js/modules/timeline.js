@@ -248,16 +248,38 @@ async function handleLike(postId, cardElement, postOwnerId, postContent) {
     const userId = state.currentUser.id;
     const username = state.currentProfile.username;
 
-    try {
-        const { data: existingVote } = await dbClient
-            .from('post_votes')
-            .select('*')
-            .eq('post_id', postId)
-            .eq('user_id', userId)
-            .eq('vote_type', 'up')
-            .maybeSingle();
+    // 1. Target UI elements inside the specific card for instant updates
+    const likeBtn = cardElement.querySelector('.like-btn');
+    const likeCountSpan = cardElement.querySelector('.like-count');
+    if (!likeBtn || !likeCountSpan) return;
 
-        if (existingVote) {
+    // 2. Determine current state instantly from DOM / button styling
+    const currentLikesCount = parseInt(likeCountSpan.textContent || '0');
+    const hasLiked = likeBtn.style.color === 'rgb(239, 68, 68)' || likeBtn.style.color === '#ef4444';
+
+    // 3. Apply Optimistic UI update immediately (Zero latency feeling)
+    let newLikesCount;
+    let existingIndicator = cardElement.querySelector('.vote-indicator');
+
+    if (hasLiked) {
+        newLikesCount = Math.max(0, currentLikesCount - 1);
+        likeBtn.style.color = 'inherit';
+        if (existingIndicator) existingIndicator.remove();
+    } else {
+        newLikesCount = currentLikesCount + 1;
+        likeBtn.style.color = '#ef4444';
+        if (!existingIndicator) {
+            const indicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #0725ad; margin-top: 4px; font-weight: bold;"> You liked this</div>`;
+            cardElement.querySelector('.tweet-actions').insertAdjacentHTML('afterend', indicatorHTML);
+        } else {
+            existingIndicator.style.display = 'block';
+        }
+    }
+    likeCountSpan.textContent = newLikesCount;
+
+    // 4. Perform background database synchronization without disrupting UI
+    try {
+        if (hasLiked) {
             // UN-LIKE LOGIC
             await dbClient
                 .from('post_votes')
@@ -304,24 +326,32 @@ async function handleLike(postId, cardElement, postOwnerId, postContent) {
             }
         }
 
-        const { data: allVotes } = await dbClient
-            .from('post_votes')
-            .select('vote_type')
-            .eq('post_id', postId)
-            .eq('vote_type', 'up');
-
-        const upvotesCount = (allVotes || []).length;
-
+        // Update total counter in posts table silently in the background
         await dbClient
             .from('posts')
-            .update({ upvotes: upvotesCount, downvotes: 0 })
+            .update({ upvotes: newLikesCount, downvotes: 0 })
             .eq('id', postId);
 
+        // Update local masterFeedArray state silently so internal data stays synced
+        const targetPostInMaster = masterFeedArray.find(p => p.id === postId);
+        if (targetPostInMaster) {
+            targetPostInMaster.upvotes = newLikesCount;
+        }
+
+        // Fetch notifications silently in the background without reloading the timeline
         await fetchNotifications();
-        await fetchTimelineTweets();
 
     } catch (err) {
         console.error("Like toggle error:", err);
+        // Rollback UI changes if network sync fails
+        likeCountSpan.textContent = currentLikesCount;
+        likeBtn.style.color = hasLiked ? '#ef4444' : 'inherit';
+        if (hasLiked && !existingIndicator) {
+            const indicatorHTML = `<div class="vote-indicator" style="font-size: 0.75em; color: #0725ad; margin-top: 4px; font-weight: bold;"> You liked this</div>`;
+            cardElement.querySelector('.tweet-actions').insertAdjacentHTML('afterend', indicatorHTML);
+        } else if (!hasLiked && existingIndicator) {
+            existingIndicator.remove();
+        }
     }
 }
 
